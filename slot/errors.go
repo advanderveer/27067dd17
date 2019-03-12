@@ -12,6 +12,9 @@ var (
 	//ErrPrevWrongRound is returned when a different round on the prev block was expected
 	ErrPrevWrongRound = fmt.Errorf("unexpected prev round provided")
 
-	//ErrInvalidVRF is returned when an invalid vrf construction was seen
-	ErrInvalidVRF = fmt.Errorf("invalid VRF encountered")
+	//ErrProposeProof is returned when an invalid vrf construction was seen
+	ErrProposeProof = fmt.Errorf("invalid proposer proof")
+
+	//ErrNotarizeProof is returned when an invalid vrf construction was seen
+	ErrNotarizeProof = fmt.Errorf("invalid notarizer proof")
 )

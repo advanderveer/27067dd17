@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"testing"
 
@@ -12,27 +13,34 @@ import (
 	test "github.com/advanderveer/go-test"
 )
 
+//tickets of various of strength 1,2,3 etc
+var (
+	ticketS1 = [slot.TicketSize]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	ticketS2 = [slot.TicketSize]byte{0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	ticketS3 = [slot.TicketSize]byte{0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+)
+
 //@TODO test concurrent operations
 
 func TestChainCreationB(t *testing.T) {
 	c1, err := slot.NewChain()
 	test.Ok(t, err)
 
-	test.Equals(t, uint64(1), c1.Round())
+	// test.Equals(t, uint64(1), c1.Round())
 
 	tip1 := c1.Tip() //tip hash of genesis
-	test.Equals(t, "6d9c54dee5660c46886f32d80e57e9dd0ffa57ee0cd2a762b036d9c8e0c3a33a", hex.EncodeToString(tip1[:]))
+	test.Equals(t, "d3df611a0ed2e328b050d285287637c60643ba96ec09e4aaefaad7f2cd114b77", hex.EncodeToString(tip1[:]))
 
-	b1, rank1 := c1.Read(tip1)
+	b1 := c1.Read(tip1)
+	rank1 := c1.Rank(tip1)
 	test.Equals(t, 1, rank1)
 	test.Equals(t, slot.NilID, b1.Prev)
 	test.Equals(t, slot.NilTicket, b1.Ticket[:])
 	test.Equals(t, slot.NilProof, b1.Proof[:])
 	test.Equals(t, slot.NilPK, b1.PK[:])
 
-	b2, rank2 := c1.Read(slot.NilID) //should not exist
+	b2 := c1.Read(slot.NilID) //should not exist
 	test.Equals(t, (*slot.Block)(nil), b2)
-	test.Equals(t, 0, rank2)
 }
 
 func TestChainTicketDrawing(t *testing.T) {
@@ -42,23 +50,24 @@ func TestChainTicketDrawing(t *testing.T) {
 	pk, sk, err := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	test.Ok(t, err)
 
-	ticket1, proof1, err := c1.Draw(pk, sk, c1.Tip())
+	t1, err := c1.Draw(pk, sk, c1.Tip(), 1)
 	test.Ok(t, err)
 
-	_, _, err = c1.Draw(pk, sk, slot.NilID)
+	_, err = c1.Draw(pk, sk, slot.NilID, 1)
 	test.Equals(t, slot.ErrPrevNotExist, err)
 
-	b1 := slot.NewBlock(c1.Round(), c1.Tip(), ticket1, proof1, pk)
-	b11 := slot.NewBlock(c1.Round(), c1.Tip(), ticket1, proof1, pk)
+	b1 := slot.NewBlock(1, c1.Tip(), t1.Data, t1.Proof, pk)
+	b11 := slot.NewBlock(1, c1.Tip(), t1.Data, t1.Proof, pk)
 	test.Equals(t, b1.Hash(), b11.Hash()) //must be deterministic
 
-	ok, err := c1.Verify(b1)
-	test.Ok(t, err)
-	test.Equals(t, true, ok)
+	// @TODO verify proof?
+	// ok, err := c1.Verify(b1)
+	// test.Ok(t, err)
+	// test.Equals(t, true, ok)
 
-	c1.Progress(2)
+	// c1.Progress(2)
 
-	b2 := slot.NewBlock(c1.Round(), c1.Tip(), ticket1, proof1, pk)
+	b2 := slot.NewBlock(2, c1.Tip(), t1.Data, t1.Proof, pk)
 	test.Assert(t, b2.Hash() != b11.Hash(), "new round causes block hash to differ")
 }
 
@@ -73,7 +82,7 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 	id1 := c.Append(b1)
 	test.Equals(t, id1, c.Tip())
 
-	_, rank1 := c.Read(id1)
+	rank1 := c.Rank(id1)
 	test.Equals(t, 1, rank1)
 	s1, _ := c.Strength(id1)
 	test.Equals(t, "904625697166532776746648320380374280103671755200316906558262375061821325312", s1.FloatString(0))
@@ -92,10 +101,10 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 		id2 := c.Append(b2)
 		test.Equals(t, id2, c.Tip()) //should swap tip
 
-		_, rank2 := c.Read(id2)
+		rank2 := c.Rank(id2)
 		test.Equals(t, 1, rank2)
 
-		_, rank1 = c.Read(id1)
+		rank1 = c.Rank(id1)
 		test.Equals(t, 2, rank1) //now has a new rank
 		s1, _ = c.Strength(id1)  //strength halved now since it moved down in rank
 		test.Equals(t, "452312848583266388373324160190187140051835877600158453279131187530910662656", s1.FloatString(0))
@@ -108,24 +117,18 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 
 			test.Equals(t, id2, c.Tip()) //should not swap tip
 
-			_, rank3 := c.Read(id3)
+			rank3 := c.Rank(id3)
 			test.Equals(t, 3, rank3)
 		})
 	})
 }
-
-var (
-	ticketS1 = [slot.TicketSize]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-	ticketS2 = [slot.TicketSize]byte{0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-	ticketS3 = [slot.TicketSize]byte{0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-)
 
 func TestMidwayTipSwap(t *testing.T) {
 	c, err := slot.NewChain()
 	test.Ok(t, err)
 
 	genid := c.Tip()
-	_, genr := c.Read(genid)
+	genr := c.Rank(genid)
 	test.Equals(t, 1, genr)
 
 	b1 := slot.NewBlock(2, c.Tip(), slot.NilTicket, slot.NilProof, slot.NilPK) //zero ticket doesn't increase sum weight
@@ -135,7 +138,7 @@ func TestMidwayTipSwap(t *testing.T) {
 	b2 := slot.NewBlock(2, c.Tip(), ticketS1[:], slot.NilProof, slot.NilPK)
 	id2 := c.Append(b2)
 	test.Equals(t, id2, c.Tip()) //s1 ticket is bigger then genesis
-	_, r2 := c.Read(id2)
+	r2 := c.Rank(id2)
 	test.Equals(t, 1, r2)
 
 	b3 := slot.NewBlock(3, c.Tip(), slot.NilTicket, slot.NilProof, slot.NilPK) //1 weight ticket does in crease weight
@@ -145,7 +148,7 @@ func TestMidwayTipSwap(t *testing.T) {
 	b4 := slot.NewBlock(3, c.Tip(), ticketS2[:], slot.NilProof, slot.NilPK) //1 weight ticket does in crease weight
 	id4 := c.Append(b4)
 	test.Equals(t, id4, c.Tip()) //s1 ticket is bigger then genesis
-	_, r4 := c.Read(id4)
+	r4 := c.Rank(id4)
 	test.Equals(t, 1, r4)
 
 	tipS1, _ := c.Strength(id4)
@@ -168,10 +171,10 @@ func TestChainAppending(t *testing.T) {
 
 	//create a chain of 100 blocks, each in its own round
 	var ids []slot.ID
-	n := 100 //@TODO increasing n shouldn't increase testing speed linearly
+	n := uint64(100) //@TODO increasing n shouldn't increase testing speed linearly
 	var strength *big.Rat
-	for i := 0; i < n; i++ {
-		ticket, proof, err := c.Draw(pk, sk, c.Tip())
+	for i := uint64(0); i < n; i++ {
+		ticket, err := c.Draw(pk, sk, c.Tip(), i+1)
 		test.Ok(t, err)
 
 		strength, _ = c.Strength(c.Tip())
@@ -179,21 +182,23 @@ func TestChainAppending(t *testing.T) {
 			test.Equals(t, "0.0", strength.FloatString(1))
 		}
 
-		b := slot.NewBlock(c.Round(), c.Tip(), ticket, proof, pk)
+		b := slot.NewBlock(i+1, c.Tip(), ticket.Data, ticket.Proof, pk)
 		ids = append(ids, b.Hash())
 
-		ok, err := c.Verify(b)
-		test.Ok(t, err)
-		test.Equals(t, true, ok)
+		// @TODO verify?
+		// ok, err := c.Verify(b)
+		// test.Ok(t, err)
+		// test.Equals(t, true, ok)
 
-		c.Append(b)
+		id := c.Append(b)
 		test.Equals(t, b.Hash(), c.Tip()) //should become new tip
+		test.Equals(t, id, c.Tip())       //should become new tip
 
-		c.Progress(c.Round() + 1)
+		// c.Progress(c.Round() + 1)
 	}
 
 	//assert chain
-	test.Equals(t, n, len(ids))
+	test.Equals(t, n, uint64(len(ids)))
 	test.Equals(t, "5814292125257717654856305910480344465283549495696731797414878196001414625954011", strength.FloatString(0))
 
 	//walk backwards from the new tip
@@ -202,7 +207,7 @@ func TestChainAppending(t *testing.T) {
 		test.Equals(t, uint64(n+1), b.Round)
 		test.Equals(t, 1, rank)
 
-		if n > 0 { //-1 is the genesis block
+		if n < math.MaxUint64 {
 			test.Equals(t, ids[n], id)
 		}
 
@@ -219,7 +224,22 @@ func TestChainAppending(t *testing.T) {
 			return e
 		}))
 	})
+}
 
+func TestThreshold(t *testing.T) {
+	//scenario: just the genesis block and genesis threshold
+	//scenario: linear declining threshold: start at genesis
+	//add blocks with with the same ticket. Threshold should
+	//decrease at a certain rate
+	//scenario: N empty rounds should reduce the threshold
+	//significantly.
+
+	//can we keep the threshold stable without sometimes failing to
+	//generate a block? Is this only a problem in small networks?
+
+	//can the notarization indicate how many proposals it saw before
+	//picking the top one? This is probably a nice indicator of the
+	//current difficulty? adversary notarizations can influence this?
 }
 
 func TestVerify(t *testing.T) {

@@ -63,7 +63,11 @@ type Block struct {
 	Ticket [TicketSize]byte
 	Proof  [ProofSize]byte
 	PK     [PKSize]byte
-	//@TODO add a notarization area
+
+	//Notarization
+	NtTicket [TicketSize]byte
+	NtProof  [ProofSize]byte
+	NtPK     [PKSize]byte
 }
 
 //NewBlock will allocate a fixed size block
@@ -96,6 +100,10 @@ func DecodeBlock(r io.Reader) (b *Block, err error) {
 		&b.Ticket,
 		&b.Proof,
 		&b.PK,
+
+		&b.NtTicket,
+		&b.NtProof,
+		&b.NtPK,
 	} {
 		err := binary.Read(r, binary.LittleEndian, v)
 		if err != nil {
@@ -114,6 +122,10 @@ func (b *Block) Encode(w io.Writer) (err error) {
 		b.Ticket,
 		b.Proof,
 		b.PK,
+
+		b.NtTicket,
+		b.NtProof,
+		b.NtPK,
 	} {
 		err := binary.Write(w, binary.LittleEndian, v)
 		if err != nil {
@@ -136,6 +148,7 @@ func (b *Block) Hash() (id ID) {
 	return
 }
 
+// Strength is the blocks ticket expressed as a rational devided by its rank
 func (b *Block) Strength(rank int) (s *big.Rat) {
 	ss := new(big.Int)
 	ss.SetBytes(b.Ticket[:])
