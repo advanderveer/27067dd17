@@ -23,8 +23,7 @@ var (
 //@TODO test concurrent operations
 
 func TestChainCreationB(t *testing.T) {
-	c1, err := slot.NewChain()
-	test.Ok(t, err)
+	c1 := slot.NewChain()
 
 	// test.Equals(t, uint64(1), c1.Round())
 
@@ -44,8 +43,7 @@ func TestChainCreationB(t *testing.T) {
 }
 
 func TestChainTicketDrawing(t *testing.T) {
-	c1, err := slot.NewChain()
-	test.Ok(t, err)
+	c1 := slot.NewChain()
 
 	pk, sk, err := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	test.Ok(t, err)
@@ -72,8 +70,7 @@ func TestChainTicketDrawing(t *testing.T) {
 }
 
 func TestRankingStrengthAndTipSwapping(t *testing.T) {
-	c, err := slot.NewChain()
-	test.Ok(t, err)
+	c := slot.NewChain()
 
 	gen := c.Tip()
 
@@ -124,8 +121,7 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 }
 
 func TestMidwayTipSwap(t *testing.T) {
-	c, err := slot.NewChain()
-	test.Ok(t, err)
+	c := slot.NewChain()
 
 	genid := c.Tip()
 	genr := c.Rank(genid)
@@ -163,8 +159,7 @@ func TestMidwayTipSwap(t *testing.T) {
 }
 
 func TestChainAppending(t *testing.T) {
-	c, err := slot.NewChain()
-	test.Ok(t, err)
+	c := slot.NewChain()
 
 	pk, sk, err := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	test.Ok(t, err)

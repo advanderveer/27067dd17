@@ -34,5 +34,5 @@ type MsgError struct {
 }
 
 func (e MsgError) Error() string {
-	return fmt.Sprintf("failed to %s on message %d (type: %d): %v", e.M, e.N, e.T, e.E)
+	return fmt.Sprintf("failed to %s on n=%d (type: %d): %v", e.M, e.N, e.T, e.E)
 }

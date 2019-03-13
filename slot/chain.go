@@ -28,7 +28,7 @@ type Chain struct {
 }
 
 // NewChain intializes a chain
-func NewChain() (c *Chain, err error) {
+func NewChain() (c *Chain) {
 	c = &Chain{
 		tip:    NilID,
 		blocks: make(map[ID]*Block),

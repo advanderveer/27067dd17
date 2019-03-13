@@ -13,8 +13,8 @@ func TestMemNetwork(t *testing.T) {
 	b1 := slot.NewBlock(1, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)
 	b2 := slot.NewBlock(2, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)
 
-	msg1 := &slot.Msg{Propose: b1}
-	msg2 := &slot.Msg{Propose: b2}
+	msg1 := &slot.Msg{Proposal: b1}
+	msg2 := &slot.Msg{Proposal: b2}
 
 	err := netw.Write(msg1) //no endpoints, message is discarded
 	test.Ok(t, err)
@@ -27,9 +27,9 @@ func TestMemNetwork(t *testing.T) {
 	err = ep1.Read(msg3)
 	test.Ok(t, err)
 
-	test.Equals(t, msg3.Propose.Hash(), b2.Hash())
-	test.Equals(t, uint64(2), msg3.Propose.Round)
-	test.Assert(t, msg3.Propose != b2, "should be copied")
+	test.Equals(t, msg3.Proposal.Hash(), b2.Hash())
+	test.Equals(t, uint64(2), msg3.Proposal.Round)
+	test.Assert(t, msg3.Proposal != b2, "should be copied")
 
 	err = netw.Write(msg2) //write again should be fine since last one was read
 	test.Ok(t, err)

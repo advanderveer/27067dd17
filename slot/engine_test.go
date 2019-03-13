@@ -25,7 +25,7 @@ func TestBasicMessageHandling(t *testing.T) {
 
 	for i := uint64(0); i < 100; i++ {
 		b := slot.NewBlock(i, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)
-		test.Ok(t, netw.Write(&slot.Msg{Propose: b}))
+		test.Ok(t, netw.Write(&slot.Msg{Proposal: b}))
 	}
 
 	test.Ok(t, ep1.Close())                           //should cause broadcast to close down
@@ -54,7 +54,7 @@ func TestReadError(t *testing.T) {
 
 	msge := err.(slot.MsgError)
 	test.Equals(t, err1, msge.E)
-	test.Equals(t, "failed to read message from broadcast on message 0 (type: 0): foo", msge.Error())
+	test.Equals(t, "failed to read message from broadcast on n=1 (type: 0): foo", msge.Error())
 
 }
 
@@ -74,6 +74,6 @@ func TestHandleError(t *testing.T) {
 
 	msge := err.(slot.MsgError)
 	test.Equals(t, slot.ErrUnknownMessage, msge.E)
-	test.Equals(t, "failed to handle rx message on message 1 (type: 0): read unkown message from broadcast", msge.Error())
+	test.Equals(t, "failed to handle rx message on n=1 (type: 0): read unkown message from broadcast", msge.Error())
 
 }

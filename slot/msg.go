@@ -1,5 +1,6 @@
 package slot
 
+//MsgType tags messages
 type MsgType uint
 
 const (
@@ -9,21 +10,21 @@ const (
 	//MsgTypeNotarized is a block notarization message
 	MsgTypeNotarized
 
-	//MsgTypePropose is a block proposal message
-	MsgTypePropose
+	//MsgTypeProposal is a block proposal message
+	MsgTypeProposal
 )
 
 //Msg holds messages holds passed around between members
 type Msg struct {
-	Propose   *Block
+	Proposal  *Block
 	Notarized *Block
 }
 
 //Type returns the message type
 func (m *Msg) Type() MsgType {
 	switch true {
-	case m.Propose != nil:
-		return MsgTypePropose
+	case m.Proposal != nil:
+		return MsgTypeProposal
 	case m.Notarized != nil:
 		return MsgTypeNotarized
 	default:

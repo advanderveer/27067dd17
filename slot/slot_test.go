@@ -20,8 +20,7 @@ func TestSyncronousNetwork(t *testing.T) {
 	//creat member data
 	var err error
 	for i := range chains {
-		chains[i], err = slot.NewChain()
-		test.Ok(t, err)
+		chains[i] = slot.NewChain()
 
 		kdata := make([]byte, 33)
 		binary.LittleEndian.PutUint64(kdata, uint64(i))
