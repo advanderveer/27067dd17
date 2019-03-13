@@ -18,8 +18,8 @@ var (
 	//ErrProposeProof is returned when an invalid vrf construction was seen
 	ErrProposeProof = fmt.Errorf("invalid proposer proof")
 
-	//ErrNotarizeProof is returned when an invalid vrf construction was seen
-	ErrNotarizeProof = fmt.Errorf("invalid notarizer proof")
+	//ErrVoteProof is returned when an invalid vrf construction was seen
+	ErrVoteProof = fmt.Errorf("invalid vote proof")
 
 	//ErrBroadcastClosed is returned when the broadcast shut down
 	ErrBroadcastClosed = fmt.Errorf("broadcast closed down")

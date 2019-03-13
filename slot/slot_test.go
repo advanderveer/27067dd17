@@ -30,7 +30,7 @@ func TestSyncronousNetwork(t *testing.T) {
 
 	//run rounds
 	for round := uint64(1); round < nrounds; round++ {
-		var notaries []*slot.Notary //just for this round
+		var voters []*slot.Voter //just for this round
 		tickets := make([]slot.Ticket, nmembers)
 
 		//everyone draws a ticket for this round
@@ -41,23 +41,23 @@ func TestSyncronousNetwork(t *testing.T) {
 			test.Ok(t, err)
 		}
 
-		//setup notaries for everyone that drew that role
+		//setup voters for everyone that drew that role
 		for j, ticket := range tickets {
-			if !ticket.Notarize {
+			if !ticket.Vote {
 				continue
 			}
 
-			notaries = append(notaries, slot.NewNotary(round, chains[j], ticket, pks[j]))
+			voters = append(voters, slot.NewVoter(round, chains[j], ticket, pks[j]))
 		}
 
-		//let all proposers propose blocks to notaries
+		//let all proposers propose blocks to voters
 		for j, ticket := range tickets {
 			if !ticket.Propose {
 				continue
 			}
 
 			b := slot.NewBlock(round, chains[j].Tip(), ticket.Data, ticket.Proof, pks[j])
-			for _, n := range notaries {
+			for _, n := range voters {
 
 				//verify for notarization
 				ok, err := n.Verify(b)
@@ -68,9 +68,9 @@ func TestSyncronousNetwork(t *testing.T) {
 			}
 		}
 
-		//append all notaries blocks to all chains
-		for _, n := range notaries {
-			nots := n.Notarize()
+		//append all voted blocks to all chains
+		for _, n := range voters {
+			nots := n.Vote()
 			for _, nb := range nots {
 				for _, c := range chains {
 

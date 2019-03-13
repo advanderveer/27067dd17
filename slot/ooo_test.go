@@ -27,11 +27,11 @@ func TestOutOfOrderNoPrev(t *testing.T) {
 
 	var handles []slot.ID
 	o := slot.NewOutOfOrder(&testbw{}, make(testbr), func(msg *slot.Msg, bw slot.BroadcastWriter) error {
-		handles = append(handles, msg.Notarized.Hash())
+		handles = append(handles, msg.Vote.Hash())
 		return nil
 	})
 
-	msg1 := &slot.Msg{Notarized: b1}
+	msg1 := &slot.Msg{Vote: b1}
 	test.Ok(t, o.Handle(msg1))
 	test.Equals(t, []slot.ID{b1.Hash()}, handles)
 }
@@ -49,18 +49,18 @@ func TestOutOfOrderSimple(t *testing.T) {
 
 	var handles []slot.ID
 	o := slot.NewOutOfOrder(&testbw{}, br, func(msg *slot.Msg, bw slot.BroadcastWriter) error {
-		if msg.Notarized.Hash() == b6.Hash() {
+		if msg.Vote.Hash() == b6.Hash() {
 			return fmt.Errorf("foo")
 		}
 
-		handles = append(handles, msg.Notarized.Hash())
+		handles = append(handles, msg.Vote.Hash())
 		return nil
 	})
 
-	msg2 := &slot.Msg{Notarized: b2}
+	msg2 := &slot.Msg{Vote: b2}
 	test.Ok(t, o.Handle(msg2)) //msg2 arrives before msg1
 
-	msg1 := &slot.Msg{Notarized: b1}
+	msg1 := &slot.Msg{Vote: b1}
 	test.Ok(t, o.Handle(msg1)) //then msg1 arrives, goes trough right away
 	test.Equals(t, []slot.ID{b1.Hash()}, handles)
 
@@ -72,11 +72,11 @@ func TestOutOfOrderSimple(t *testing.T) {
 	test.Equals(t, []slot.ID{b1.Hash(), b2.Hash()}, handles)
 
 	//b4 should succeed because b3 was already written before any handling
-	test.Ok(t, o.Handle(&slot.Msg{Notarized: b4})) //then msg1 arrives, goes trough right away
+	test.Ok(t, o.Handle(&slot.Msg{Vote: b4})) //then msg1 arrives, goes trough right away
 	test.Equals(t, []slot.ID{b1.Hash(), b2.Hash(), b4.Hash()}, handles)
 
 	t.Run("error resolve", func(t *testing.T) {
-		test.Ok(t, o.Handle(&slot.Msg{Notarized: b6}))
+		test.Ok(t, o.Handle(&slot.Msg{Vote: b6}))
 		err := o.Resolve(b5)
 		test.Equals(t, "failed to resolve out-of-order messages: foo", err.Error())
 	})

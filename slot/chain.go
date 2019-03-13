@@ -9,10 +9,10 @@ import (
 
 //Ticket describes verifiable random lottery draws and the roles that it grands
 type Ticket struct {
-	Data     []byte //actual vrf data
-	Proof    []byte //proof of the data
-	Notarize bool   //true if the ticket grants notarization rights
-	Propose  bool   //true if the ticket grants block proposer rights
+	Data    []byte //actual vrf data
+	Proof   []byte //proof of the data
+	Vote    bool   //true if the ticket grants voting rights
+	Propose bool   //true if the ticket grants block proposer rights
 }
 
 // Chain describes the state of our algorithm though blocks linked together and
@@ -53,7 +53,7 @@ func (c *Chain) Tip() (tip ID) {
 	return c.tip
 }
 
-// Verify the block is correctly notarized and passes all the requirements
+// Verify the block is passes the requirements and contains a valid vote
 func (c *Chain) Verify(b *Block) (ok bool, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -65,7 +65,9 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 	//could result in an artifical low threshold that the user may force itself
 	//into for the current round? i.e: create a block for this round based on the
 	//genesis block. All open blocks in between cause will cause the threshold to
-	//be very low
+	//be very low.
+	//@TODO how do we prevent an advisary from picking any previous block in the
+	//past until it draws a ticket that grants him the role he wants?
 
 	//get prev for block, must exist to validate
 	prevb := c.read(b.Prev)
@@ -73,14 +75,14 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 		return false, ErrPrevNotExist
 	}
 
-	//@TODO check if it a notarize block at all: i.e. are all the fields filled in
+	//@TODO check if it a vote block at all: i.e. are all the fields filled in
 	//@TODO check if all the block fields are filled in (non-nil)
 
 	seed := Seed(prevb, b.Round)
 
-	//Verify the notarization proof
-	if !vrf.Verify(b.NtPK[:], seed, b.NtTicket[:], b.NtProof[:]) {
-		return false, ErrNotarizeProof
+	//Verify the voting proof
+	if !vrf.Verify(b.VotePK[:], seed, b.VoteTicket[:], b.VoteProof[:]) {
+		return false, ErrVoteProof
 	}
 
 	//Verify the proposer proof
@@ -88,9 +90,9 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 		return false, ErrProposeProof
 	}
 
-	//check if the proposer and notarizer ticket prevent indeed allowed those roles
+	//check if the proposer and voting ticket indeed allowed those roles
 	//check if the proposer didn't propose another block this round that we saw
-	//check that the ticket has indeed granted access to to ticket proposal or notarization
+	//check that the ticket has indeed granted access to to ticket proposal or voting
 	//check if the signer of the block already provided another block for the round
 
 	return true, nil
@@ -115,13 +117,14 @@ func (c *Chain) Draw(pk []byte, sk *[vrf.SecretKeySize]byte, prev ID, round uint
 	//calculate the ticket's seed
 	seed := Seed(prevb, round)
 
-	//draw a new ticket, use previoub block ticket as seed
+	//draw a new ticket, use previoub block ticket as seed.
+	//@TODO we could potentially gather randomness from any number of past blocks
 	t.Data, t.Proof = vrf.Prove(seed, sk)
 
 	//@TODO base role on the threshold function
 	_ = c.Threshold(10, prev)
 	t.Propose = true
-	t.Notarize = true
+	t.Vote = true
 	return
 }
 
@@ -129,7 +132,7 @@ func (c *Chain) Draw(pk []byte, sk *[vrf.SecretKeySize]byte, prev ID, round uint
 // value for the next ticket draw.
 func (c *Chain) Threshold(depth uint64, id ID) (t [TicketSize]byte) {
 
-	//@TODO implement, for now the threshold is always the ticket zero value, e.g
+	//@TODO implement, for now the threshold is always the ticket's zero value, e.g
 	//everyone will be selected
 
 	//the basic logic is: if we got many members in the network the priority will
@@ -172,7 +175,7 @@ func (c *Chain) strength(id ID) (s *big.Rat, err error) {
 }
 
 // Append a new block unconditionally, in normal operation the block should
-// first be verified for syntax and be notarized.
+// first be verified for syntax and come with a vote.
 func (c *Chain) Append(b *Block) (id ID) {
 	id = b.Hash()
 
@@ -228,7 +231,7 @@ func (c *Chain) Append(b *Block) (id ID) {
 
 // Walk the chain towards the genesis, calling f for each block. This does not
 // operate on a consistent snapshot of the block data. Blocks can be added while
-// while walking causing the ranks to be inconsistent.
+// walking causing the ranks to be inconsistent.
 func (c *Chain) Walk(id ID, f func(bid ID, b *Block, rank int) error) (err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

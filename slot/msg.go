@@ -7,8 +7,8 @@ const (
 	//MsgTypeUnkown is a message that is unkown
 	MsgTypeUnkown MsgType = iota
 
-	//MsgTypeNotarized is a block notarization message
-	MsgTypeNotarized
+	//MsgTypeVote is a block voting message
+	MsgTypeVote
 
 	//MsgTypeProposal is a block proposal message
 	MsgTypeProposal
@@ -16,8 +16,8 @@ const (
 
 //Msg holds messages holds passed around between members
 type Msg struct {
-	Proposal  *Block
-	Notarized *Block
+	Proposal *Block
+	Vote     *Block
 }
 
 //Type returns the message type
@@ -25,8 +25,8 @@ func (m *Msg) Type() MsgType {
 	switch true {
 	case m.Proposal != nil:
 		return MsgTypeProposal
-	case m.Notarized != nil:
-		return MsgTypeNotarized
+	case m.Vote != nil:
+		return MsgTypeVote
 	default:
 		return MsgTypeUnkown
 	}

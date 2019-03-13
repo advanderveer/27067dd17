@@ -14,7 +14,7 @@ func (r blocks) Read(id slot.ID) (b *slot.Block) {
 	return
 }
 
-func TestNotarization(t *testing.T) {
+func TestVoting(t *testing.T) {
 	t1 := make([]byte, slot.TicketSize)
 	t1[0] = 0x01
 	p1 := make([]byte, slot.ProofSize)
@@ -23,7 +23,7 @@ func TestNotarization(t *testing.T) {
 	pk1[0] = 0x01
 
 	r1 := blocks{}
-	n1 := slot.NewNotary(1, r1, slot.Ticket{Data: t1, Proof: p1}, pk1)
+	n1 := slot.NewVoter(1, r1, slot.Ticket{Data: t1, Proof: p1}, pk1)
 	b1 := slot.NewBlock(2, slot.NilID, ticketS1[:], slot.NilProof, slot.NilPK)
 	b2 := slot.NewBlock(3, slot.NilID, ticketS2[:], slot.NilProof, slot.NilPK)
 	b3 := slot.NewBlock(4, slot.NilID, ticketS2[:], slot.NilProof, slot.NilPK)
@@ -48,10 +48,10 @@ func TestNotarization(t *testing.T) {
 	test.Equals(t, false, ok) //should do nothing
 	test.Equals(t, 2, n)
 
-	nots := n1.Notarize()
-	for _, not := range nots {
-		test.Equals(t, t1, not.NtTicket[:])
-		test.Equals(t, p1, not.NtProof[:])
-		test.Equals(t, pk1, not.NtPK[:])
+	votes := n1.Vote()
+	for _, vote := range votes {
+		test.Equals(t, t1, vote.VoteTicket[:])
+		test.Equals(t, p1, vote.VoteProof[:])
+		test.Equals(t, pk1, vote.VotePK[:])
 	}
 }

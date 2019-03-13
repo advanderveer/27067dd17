@@ -64,10 +64,10 @@ type Block struct {
 	Proof  [ProofSize]byte
 	PK     [PKSize]byte
 
-	//Notarization
-	NtTicket [TicketSize]byte
-	NtProof  [ProofSize]byte
-	NtPK     [PKSize]byte
+	//Block vote
+	VoteTicket [TicketSize]byte
+	VoteProof  [ProofSize]byte
+	VotePK     [PKSize]byte
 }
 
 //NewBlock will allocate a fixed size block
@@ -101,9 +101,9 @@ func DecodeBlock(r io.Reader) (b *Block, err error) {
 		&b.Proof,
 		&b.PK,
 
-		&b.NtTicket,
-		&b.NtProof,
-		&b.NtPK,
+		&b.VoteTicket,
+		&b.VoteProof,
+		&b.VotePK,
 	} {
 		err := binary.Read(r, binary.LittleEndian, v)
 		if err != nil {
@@ -123,9 +123,9 @@ func (b *Block) Encode(w io.Writer) (err error) {
 		b.Proof,
 		b.PK,
 
-		b.NtTicket,
-		b.NtProof,
-		b.NtPK,
+		b.VoteTicket,
+		b.VoteProof,
+		b.VotePK,
 	} {
 		err := binary.Write(w, binary.LittleEndian, v)
 		if err != nil {

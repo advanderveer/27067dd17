@@ -232,9 +232,9 @@ func TestThreshold(t *testing.T) {
 	//can we keep the threshold stable without sometimes failing to
 	//generate a block? Is this only a problem in small networks?
 
-	//can the notarization indicate how many proposals it saw before
+	//can the nr of votes indicate how many proposals it saw before
 	//picking the top one? This is probably a nice indicator of the
-	//current difficulty? adversary notarizations can influence this?
+	//current difficulty? adversary voters can influence this?
 }
 
 func TestVerify(t *testing.T) {

@@ -69,8 +69,8 @@ func (o *OutOfOrder) Handle(msg *Msg) (err error) {
 	switch msg.Type() {
 	case MsgTypeProposal:
 		prev = msg.Proposal.Prev
-	case MsgTypeNotarized:
-		prev = msg.Notarized.Prev
+	case MsgTypeVote:
+		prev = msg.Vote.Prev
 	default:
 		return o.handle(msg, o.bw)
 	}
