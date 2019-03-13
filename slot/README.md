@@ -21,6 +21,8 @@ https://github.com/chainpoint/whitepaper/issues/6
      N block as indication of how good the proposers are at finding high values, a
      large network should be able to find super high values. Some high draws might
      be lucky, but overall it should indicate the size of the network.
+- [] implement the out of order handler
+- [x] implement the broadcast deduplication filter
 
 ## Protocol
 - Each member uses its clock to decide in which round we are, each round is a 5s

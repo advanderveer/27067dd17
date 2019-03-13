@@ -42,6 +42,7 @@ func (e *Engine) Stats() (rx, tx uint64) {
 // Run will keep reading messages from the broadcast layer and write new
 // messages to it.
 func (e *Engine) Run(bc Broadcast) (err error) {
+	ooo := NewOutOfOrder(e.Handle, bc)
 
 	curr := &Msg{}
 	for {
@@ -53,35 +54,26 @@ func (e *Engine) Run(bc Broadcast) (err error) {
 		}
 
 		n := atomic.AddUint64(&e.rxMsg, 1)
-		out, err := e.Handle(curr)
+		err := ooo.Handle(curr)
 		if err != nil {
 			return MsgError{T: curr.Type(), N: n, E: err, M: "handle rx message"}
-		}
-
-		for _, o := range out {
-			err = bc.Write(o)
-			if err != nil {
-				return MsgError{T: curr.Type(), N: n, E: err, M: "write tx message"}
-			}
-
-			atomic.AddUint64(&e.txMsg, 1)
 		}
 	}
 }
 
 // Handle a single message, messages may arrive in any order.
-func (e *Engine) Handle(in *Msg) (out []*Msg, err error) {
+func (e *Engine) Handle(in *Msg, bw BroadcastWriter) (err error) {
 	switch in.Type() {
 	case MsgTypeNotarized: //notarization message
-		return e.handleNotarized(in.Notarized)
+		return e.handleNotarized(in.Notarized, bw)
 	case MsgTypeProposal: //proposal message
-		return e.handleProposal(in.Proposal)
+		return e.handleProposal(in.Proposal, bw)
 	default:
-		return nil, ErrUnknownMessage
+		return ErrUnknownMessage
 	}
 }
 
-func (e *Engine) handleNotarized(b *Block) (out []*Msg, err error) {
+func (e *Engine) handleNotarized(b *Block, bw BroadcastWriter) (err error) {
 	// (2.0) do basic syntax inspection, if any fields are missing or wrong size
 	// discard right away.
 
@@ -117,7 +109,7 @@ func (e *Engine) handleNotarized(b *Block) (out []*Msg, err error) {
 	return
 }
 
-func (e *Engine) handleProposal(b *Block) (out []*Msg, err error) {
+func (e *Engine) handleProposal(b *Block, bw BroadcastWriter) (err error) {
 	// (2.0) do basic syntax inspection, if any fields are missing or wrong size
 	// discard right away.
 

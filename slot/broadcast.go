@@ -2,15 +2,23 @@ package slot
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/gob"
 	"io"
 	"sync"
 )
 
 // Broadcast represents a asyncornous message transport that is expected to
-// reliabily deliver to all members of the network eventually.
+// reliabily deliver to all members of the network eventually. It will
+// dedublicate the messages for each reader to prevent a broadcast storm.
 type Broadcast interface {
 	Read(m *Msg) (err error)
+	BroadcastWriter
+}
+
+// BroadcastWriter represents the writing part of the broadcast such that it
+// can easily be passed around.
+type BroadcastWriter interface {
 	Write(m *Msg) (err error)
 }
 
@@ -36,6 +44,19 @@ func (netw *MemNetwork) Write(m *Msg) (err error) {
 	}
 
 	for ep := range netw.eps {
+
+		//deduplicate messages
+		ep.mu.Lock()
+		id := sha256.Sum256(buf.Bytes())
+		if _, ok := ep.dedub[id]; ok {
+			ep.mu.Unlock()
+			continue
+		}
+
+		ep.dedub[id] = struct{}{}
+		ep.mu.Unlock()
+
+		//schedule for reader to pick up
 		ep.rc <- buf
 	}
 
@@ -47,14 +68,21 @@ func (netw *MemNetwork) Endpoint() (ep *MemEndpoint) {
 	netw.mu.Lock()
 	defer netw.mu.Unlock()
 
-	ep = &MemEndpoint{rc: make(chan *bytes.Buffer, 1), MemNetwork: netw}
+	ep = &MemEndpoint{
+		rc:         make(chan *bytes.Buffer, 1),
+		dedub:      make(map[[sha256.Size]byte]struct{}),
+		MemNetwork: netw,
+	}
+
 	netw.eps[ep] = struct{}{}
 	return ep
 }
 
 // MemEndpoint is an endpoint in the memory network that can be used for broadcasting
 type MemEndpoint struct {
-	rc chan *bytes.Buffer
+	rc    chan *bytes.Buffer
+	dedub map[[sha256.Size]byte]struct{}
+	mu    sync.Mutex
 	*MemNetwork
 }
 
