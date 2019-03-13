@@ -1,6 +1,9 @@
 package slot
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 var (
 	//ErrPrevNotExist is returned if it was expected that a prev ref block would exist
@@ -35,4 +38,16 @@ type MsgError struct {
 
 func (e MsgError) Error() string {
 	return fmt.Sprintf("failed to %s on n=%d (type: %d): %v", e.M, e.N, e.T, e.E)
+}
+
+// ResolveErr is returend when we failed to handle after an out-of-order resolve
+type ResolveErr []error
+
+func (e ResolveErr) Error() string {
+	var str []string
+	for _, err := range e {
+		str = append(str, err.Error())
+	}
+
+	return fmt.Sprintf("failed to resolve out-of-order messages: %v", strings.Join(str, ", "))
 }

@@ -53,7 +53,7 @@ func (c *Chain) Tip() (tip ID) {
 	return c.tip
 }
 
-// Verify the block with an error explaining what went wrong
+// Verify the block is correctly notarized and passes all the requirements
 func (c *Chain) Verify(b *Block) (ok bool, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -73,18 +73,8 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 		return false, ErrPrevNotExist
 	}
 
-	//check if round is current round
-	//@TODO unless it is a block notarization? this is allowed in any current round
-	// if b.Round != c.round {
-	// 	return false, ErrWrongRound
-	// }
-
-	//check if the prevb was the blocks round -1
-	//@TODO except if a round didn't yield a block, check instead if there was no
-	//block between this round and the round as referenced by prev
-	// if prevb.Round != b.Round-1 {
-	// 	return false, ErrPrevWrongRound
-	// }
+	//@TODO check if it a notarize block at all: i.e. are all the fields filled in
+	//@TODO check if all the block fields are filled in (non-nil)
 
 	seed := Seed(prevb, b.Round)
 
@@ -98,8 +88,9 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 		return false, ErrProposeProof
 	}
 
+	//check if the proposer and notarizer ticket prevent indeed allowed those roles
+	//check if the proposer didn't propose another block this round that we saw
 	//check that the ticket has indeed granted access to to ticket proposal or notarization
-	//check if there is another block at its round that has a higher prio
 	//check if the signer of the block already provided another block for the round
 
 	return true, nil
@@ -181,7 +172,7 @@ func (c *Chain) strength(id ID) (s *big.Rat, err error) {
 }
 
 // Append a new block unconditionally, in normal operation the block should
-// first be verified for syntax and notarization.
+// first be verified for syntax and be notarized.
 func (c *Chain) Append(b *Block) (id ID) {
 	id = b.Hash()
 
