@@ -23,6 +23,7 @@ type Chain struct {
 	blocks map[ID]*Block              //stores all blocks this chain knows of
 	rounds map[uint64]map[ID]struct{} //maps blocks to rounds
 	ranks  map[ID]int                 //stores the rank of each block in its respective round
+	votes  map[ID]map[[TicketSize]byte]struct{}
 
 	mu sync.RWMutex
 }
@@ -34,6 +35,7 @@ func NewChain() (c *Chain) {
 		blocks: make(map[ID]*Block),
 		rounds: make(map[uint64]map[ID]struct{}),
 		ranks:  make(map[ID]int),
+		votes:  make(map[ID]map[[TicketSize]byte]struct{}),
 	}
 
 	//create genesis block in round 0
@@ -53,8 +55,26 @@ func (c *Chain) Tip() (tip ID) {
 	return c.tip
 }
 
-// Verify the block is passes the requirements and contains a valid vote
-func (c *Chain) Verify(b *Block) (ok bool, err error) {
+// Tally will record a block vote and return how many unique votes we have then
+// seen.
+func (c *Chain) Tally(v *Vote) (n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	id := v.Block.Hash()
+	votes, ok := c.votes[id]
+	if !ok {
+		votes = make(map[[TicketSize]byte]struct{})
+	}
+
+	votes[v.VoteTicket] = struct{}{}
+	c.votes[id] = votes
+
+	return len(votes)
+}
+
+// Verify the block vote is passes the requirements and contains a valid vote
+func (c *Chain) Verify(v *Vote) (ok bool, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -70,7 +90,7 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 	//past until it draws a ticket that grants him the role he wants?
 
 	//get prev for block, must exist to validate
-	prevb := c.read(b.Prev)
+	prevb := c.read(v.Prev)
 	if prevb == nil {
 		return false, ErrPrevNotExist
 	}
@@ -78,15 +98,15 @@ func (c *Chain) Verify(b *Block) (ok bool, err error) {
 	//@TODO check if it a vote block at all: i.e. are all the fields filled in
 	//@TODO check if all the block fields are filled in (non-nil)
 
-	seed := Seed(prevb, b.Round)
+	seed := Seed(prevb, v.Round)
 
 	//Verify the voting proof
-	if !vrf.Verify(b.VotePK[:], seed, b.VoteTicket[:], b.VoteProof[:]) {
+	if !vrf.Verify(v.VotePK[:], seed, v.VoteTicket[:], v.VoteProof[:]) {
 		return false, ErrVoteProof
 	}
 
 	//Verify the proposer proof
-	if !vrf.Verify(b.PK[:], seed, b.Ticket[:], b.Proof[:]) {
+	if !vrf.Verify(v.PK[:], seed, v.Ticket[:], v.Proof[:]) {
 		return false, ErrProposeProof
 	}
 
@@ -176,7 +196,7 @@ func (c *Chain) strength(id ID) (s *big.Rat, err error) {
 
 // Append a new block unconditionally, in normal operation the block should
 // first be verified for syntax and come with a vote.
-func (c *Chain) Append(b *Block) (id ID) {
+func (c *Chain) Append(b *Block) (id ID, newtip bool) {
 	id = b.Hash()
 
 	//determine prev strength
@@ -224,6 +244,7 @@ func (c *Chain) Append(b *Block) (id ID) {
 
 	if tipStrength.Cmp(prevStrength) < 0 {
 		c.tip = id
+		newtip = true
 	}
 
 	return

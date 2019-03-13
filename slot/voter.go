@@ -96,10 +96,10 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 
 // Vote will return the highest scoring blocks the voter it has seen for this
 // round with a proof that it was allowed to cast a vote.
-func (v *Voter) Vote() (votes []*Block) {
+func (v *Voter) Vote() (votes []*Vote) {
 	v.mu.Lock()
 	for _, b := range v.votes {
-		votes = append(votes, b)
+		votes = append(votes, &Vote{Block: b})
 	}
 
 	v.votes = make(map[ID]*Block)

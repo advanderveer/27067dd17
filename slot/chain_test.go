@@ -28,7 +28,7 @@ func TestChainCreationB(t *testing.T) {
 	// test.Equals(t, uint64(1), c1.Round())
 
 	tip1 := c1.Tip() //tip hash of genesis
-	test.Equals(t, "d3df611a0ed2e328b050d285287637c60643ba96ec09e4aaefaad7f2cd114b77", hex.EncodeToString(tip1[:]))
+	test.Equals(t, "6d9c54dee5660c46886f32d80e57e9dd0ffa57ee0cd2a762b036d9c8e0c3a33a", hex.EncodeToString(tip1[:]))
 
 	b1 := c1.Read(tip1)
 	rank1 := c1.Rank(tip1)
@@ -76,8 +76,9 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 
 	b1 := slot.NewBlock(1, gen, slot.NilTicket, slot.NilProof, slot.NilPK)
 	b1.Ticket[0] = 0x02
-	id1 := c.Append(b1)
+	id1, newt1 := c.Append(b1)
 	test.Equals(t, id1, c.Tip())
+	test.Equals(t, true, newt1)
 
 	rank1 := c.Rank(id1)
 	test.Equals(t, 1, rank1)
@@ -95,7 +96,7 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 		//adding another block should reduce the rank of the first block
 		b2 := slot.NewBlock(1, gen, slot.NilTicket, slot.NilProof, slot.NilPK)
 		b2.Ticket[0] = 0x03
-		id2 := c.Append(b2)
+		id2, _ := c.Append(b2)
 		test.Equals(t, id2, c.Tip()) //should swap tip
 
 		rank2 := c.Rank(id2)
@@ -110,7 +111,7 @@ func TestRankingStrengthAndTipSwapping(t *testing.T) {
 
 			b3 := slot.NewBlock(1, gen, slot.NilTicket, slot.NilProof, slot.NilPK)
 			b3.Ticket[0] = 0x01
-			id3 := c.Append(b3)
+			id3, _ := c.Append(b3)
 
 			test.Equals(t, id2, c.Tip()) //should not swap tip
 
@@ -132,7 +133,7 @@ func TestMidwayTipSwap(t *testing.T) {
 	test.Equals(t, genid, c.Tip()) //not bigger then genesis weight, still the tip
 
 	b2 := slot.NewBlock(2, c.Tip(), ticketS1[:], slot.NilProof, slot.NilPK)
-	id2 := c.Append(b2)
+	id2, _ := c.Append(b2)
 	test.Equals(t, id2, c.Tip()) //s1 ticket is bigger then genesis
 	r2 := c.Rank(id2)
 	test.Equals(t, 1, r2)
@@ -142,7 +143,7 @@ func TestMidwayTipSwap(t *testing.T) {
 	test.Equals(t, id2, c.Tip()) //adding zero weight ticket doesnt change tip
 
 	b4 := slot.NewBlock(3, c.Tip(), ticketS2[:], slot.NilProof, slot.NilPK) //1 weight ticket does in crease weight
-	id4 := c.Append(b4)
+	id4, _ := c.Append(b4)
 	test.Equals(t, id4, c.Tip()) //s1 ticket is bigger then genesis
 	r4 := c.Rank(id4)
 	test.Equals(t, 1, r4)
@@ -154,7 +155,7 @@ func TestMidwayTipSwap(t *testing.T) {
 	//now we add a new tip with strength "3" at a lower round. The tips selection
 	//should switch over because it will reduce the rank of b4 (current tip)
 	b5 := slot.NewBlock(2, genid, ticketS3[:], slot.NilProof, slot.NilPK) //1 weight ticket does in crease weight
-	id5 := c.Append(b5)
+	id5, _ := c.Append(b5)
 	test.Equals(t, id5, c.Tip())
 }
 
@@ -185,7 +186,7 @@ func TestChainAppending(t *testing.T) {
 		// test.Ok(t, err)
 		// test.Equals(t, true, ok)
 
-		id := c.Append(b)
+		id, _ := c.Append(b)
 		test.Equals(t, b.Hash(), c.Tip()) //should become new tip
 		test.Equals(t, id, c.Tip())       //should become new tip
 
@@ -219,6 +220,25 @@ func TestChainAppending(t *testing.T) {
 			return e
 		}))
 	})
+}
+
+func TestTally(t *testing.T) {
+	c := slot.NewChain()
+	b1 := &slot.Vote{Block: slot.NewBlock(1, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)}
+	n1 := c.Tally(b1)
+	test.Equals(t, 1, n1)
+
+	n2 := c.Tally(b1) //adding the same shouldnt increase the vote count
+	test.Equals(t, 1, n2)
+
+	b2 := &slot.Vote{Block: slot.NewBlock(1, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)}
+	b2.VoteTicket[0] = 0x01 //different ticket should add another vote
+
+	n3 := c.Tally(b2) //adding a vote for the same block with another ticket
+	test.Equals(t, 2, n3)
+
+	n4 := c.Tally(b2) //adding the same ticket should not increase votes
+	test.Equals(t, 2, n4)
 }
 
 func TestThreshold(t *testing.T) {

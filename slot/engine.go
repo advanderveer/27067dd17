@@ -16,8 +16,9 @@ type Engine struct {
 	rxMsg uint64                   //received message count
 	txMsg uint64                   //transmit message count
 
-	chain  *Chain //holds state for voted blocks
-	notary *Voter //hold our voting state (if we have the right)
+	minVotes uint64 //minimum nr votes requires before a block is appended
+	chain    *Chain //holds state for voted blocks
+	notary   *Voter //hold our voting state (if we have the right)
 }
 
 // NewEngine sets up the engine
@@ -77,7 +78,7 @@ func (e *Engine) Handle(in *Msg, bw BroadcastWriter) (err error) {
 // HandleVote is called when a block with vote comes along. This might be
 // called out-of-order so potentially hours after the message actually arriving
 // on the machine
-func (e *Engine) HandleVote(b *Block, bw BroadcastWriter) (err error) {
+func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 	// (2.0) do basic syntax inspection, if any fields are missing or wrong size
 	// discard right away.
 
@@ -88,7 +89,7 @@ func (e *Engine) HandleVote(b *Block, bw BroadcastWriter) (err error) {
 	// - Verify if it a vote at all
 	// - Verify that the proposer pk didn't already propose a block @TODO what if
 	//   others use another pk then there own?
-	ok, err := e.chain.Verify(b)
+	ok, err := e.chain.Verify(v)
 	if !ok {
 		_ = err    //@TODO log verification errors
 		return nil //not a valid block
@@ -96,7 +97,7 @@ func (e *Engine) HandleVote(b *Block, bw BroadcastWriter) (err error) {
 
 	// (2.4) at this point it is ok to relay the vote message, broadcast
 	// will take care of message deduplication.
-	err = bw.Write(&Msg{Vote: b})
+	err = bw.Write(&Msg{Vote: v})
 	if err != nil {
 		return fmt.Errorf("failed to relay notarized block: %v", err)
 	}
@@ -108,21 +109,51 @@ func (e *Engine) HandleVote(b *Block, bw BroadcastWriter) (err error) {
 	// - an unhonest voter might keep signing blocks in a round that are created
 	//   ad infinitum by a proposer that is also under its control for that round
 	//   @TODO how to prevent this?: Every proposer can propose only one block per round
-
-	// (2.6) if the counter passed the vote threshold we can now append the block to our chain.
-	// and resolve any out of order handle calls that are waiting
+	nvotes := e.chain.Tally(v)
 
 	// (2.7) if we are a voter and the block is of the same round as we're voting for
 	// for we will stop casting voting
+	// @TODO stop voting
+
+	// (2.6) if the counter passed the vote threshold we can now append the block to our chain.
+	// and resolve any out of order handle calls that are waiting
+	// @TODO can the minvotes be based on chain history?
+	if uint64(nvotes) <= e.minVotes {
+		return nil //not enough votes (yet), the block in this vote is worth nothing (yet)
+	}
+
+	//@TODO resolve out-of-order blocks
+
+	//append the block in the vote and see if it changes the tip
+	_, newtip := e.chain.Append(v.Block)
+	if !newtip {
+		return nil //tip didn't change nothing left to do
+	}
 
 	// (2.8) if the tip changed we can now draw another ticket.
+	tipb := e.chain.Read(e.chain.Tip())
+	if tipb == nil {
+		panic("new tip block doesn't exist")
+	}
+
+	//@TODO for which round do we want to draw?
+	ticket, err := e.chain.Draw(e.vrfPK, e.vrfSK, e.chain.Tip(), tipb.Round)
+	if err != nil {
+		return fmt.Errorf("failed to draw new ticket: %v", err)
+	}
 
 	// (2.9) if the ticket grants us the right to propose, propose and broadcast the block
 	// with the proof.
+	if ticket.Propose {
+
+	}
 
 	// (2.10) if the ticket grants us the right to vote, create a voter for the new
 	// round and start handling proposals. And start the BlockTime timer, whenever the
 	// timer expires. Write a vote message to the broadcast.
+	if ticket.Vote {
+
+	}
 
 	return
 }

@@ -56,6 +56,26 @@ func Rank(blocks []*Block) {
 	})
 }
 
+//Vote holds a endorsement for a block, signed by a voter and comes with
+//a copy of the block itself
+type Vote struct {
+	*Block
+
+	//@TODO think about whether the block needs to be part of some signature to
+	//validate the vote?
+	VoteTicket [TicketSize]byte
+	VoteProof  [ProofSize]byte
+	VotePK     [PKSize]byte
+}
+
+//Hash the vote
+func (v *Vote) Hash() (id ID) { panic("not implemented") }
+
+//BlockHash hashes the block contained in the vote
+func (v *Vote) BlockHash() (id ID) {
+	return v.Block.Hash()
+}
+
 //Block holds the data the algorithm is trying to reach consensus over.
 type Block struct {
 	Round  uint64
@@ -63,11 +83,6 @@ type Block struct {
 	Ticket [TicketSize]byte
 	Proof  [ProofSize]byte
 	PK     [PKSize]byte
-
-	//Block vote
-	VoteTicket [TicketSize]byte
-	VoteProof  [ProofSize]byte
-	VotePK     [PKSize]byte
 }
 
 //NewBlock will allocate a fixed size block
@@ -100,10 +115,6 @@ func DecodeBlock(r io.Reader) (b *Block, err error) {
 		&b.Ticket,
 		&b.Proof,
 		&b.PK,
-
-		&b.VoteTicket,
-		&b.VoteProof,
-		&b.VotePK,
 	} {
 		err := binary.Read(r, binary.LittleEndian, v)
 		if err != nil {
@@ -122,10 +133,6 @@ func (b *Block) Encode(w io.Writer) (err error) {
 		b.Ticket,
 		b.Proof,
 		b.PK,
-
-		b.VoteTicket,
-		b.VoteProof,
-		b.VotePK,
 	} {
 		err := binary.Write(w, binary.LittleEndian, v)
 		if err != nil {

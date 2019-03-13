@@ -70,17 +70,17 @@ func TestSyncronousNetwork(t *testing.T) {
 
 		//append all voted blocks to all chains
 		for _, n := range voters {
-			nots := n.Vote()
-			for _, nb := range nots {
+			votes := n.Vote()
+			for _, v := range votes {
 				for _, c := range chains {
 
 					//verify for appending
-					ok, err := c.Verify(nb)
+					ok, err := c.Verify(v)
 					test.Ok(t, err)
 					test.Equals(t, true, ok)
 
 					//append notarized block to chain
-					_ = c.Append(nb)
+					_, _ = c.Append(v.Block)
 
 					//@TODO assert state after appending
 				}

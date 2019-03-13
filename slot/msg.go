@@ -17,7 +17,7 @@ const (
 //Msg holds messages holds passed around between members
 type Msg struct {
 	Proposal *Block
-	Vote     *Block
+	Vote     *Vote
 }
 
 //Type returns the message type

@@ -122,7 +122,7 @@ func TestEncoding(t *testing.T) {
 	buf1 := bytes.NewBuffer(nil)
 	err := b1.Encode(buf1)
 	test.Ok(t, err)
-	test.Equals(t, slot.IDSize+slot.TicketSize+slot.ProofSize+slot.PKSize+8+slot.TicketSize+slot.ProofSize+slot.PKSize, buf1.Len())
+	test.Equals(t, slot.IDSize+slot.TicketSize+slot.ProofSize+slot.PKSize+8, buf1.Len())
 
 	b2, err := slot.DecodeBlock(buf1)
 	test.Ok(t, err)
@@ -153,7 +153,7 @@ func (ew errhash) Write(p []byte) (n int, err error) {
 func TestHashing(t *testing.T) {
 	b := testBlock(t)
 	h1 := b.Hash()
-	test.Equals(t, "9d875bef7b29f62be5c44aafe8c0e9c9d0d17911241d04b24833ad03374574c0", hex.EncodeToString(h1[:]))
+	test.Equals(t, "51199f9fb223fcab4051bc61a60aac38e32a0dd63153e4b4e9b9e998ef850b66", hex.EncodeToString(h1[:]))
 
 	oldf := slot.NewBlockHash
 	t.Run("hash error", func(t *testing.T) {
