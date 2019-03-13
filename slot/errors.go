@@ -17,4 +17,22 @@ var (
 
 	//ErrNotarizeProof is returned when an invalid vrf construction was seen
 	ErrNotarizeProof = fmt.Errorf("invalid notarizer proof")
+
+	//ErrBroadcastClosed is returned when the broadcast shut down
+	ErrBroadcastClosed = fmt.Errorf("broadcast closed down")
+
+	//ErrUnknownMessage is returned by the engine when it ran into an unkown message
+	ErrUnknownMessage = fmt.Errorf("read unkown message from broadcast")
 )
+
+//MsgError is returned when an error occurded due to a certain message
+type MsgError struct {
+	N uint64
+	T MsgType
+	E error
+	M string
+}
+
+func (e MsgError) Error() string {
+	return fmt.Sprintf("failed to %s on message %d (type: %d): %v", e.M, e.N, e.T, e.E)
+}

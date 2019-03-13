@@ -46,16 +46,6 @@ func NewChain() (c *Chain, err error) {
 	return
 }
 
-// Progress the chain to another round
-// func (c *Chain) Progress(round uint64) {
-// 	atomic.StoreUint64(&c.round, round)
-// }
-
-// Round returns the current round
-// func (c *Chain) Round() uint64 {
-// 	return atomic.LoadUint64(&c.round)
-// }
-
 // Tip returns the current tip
 func (c *Chain) Tip() (tip ID) {
 	c.mu.RLock()
