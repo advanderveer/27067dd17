@@ -26,9 +26,15 @@ https://github.com/chainpoint/whitepaper/issues/6
 - [x] find a way to resolve blocks from the handler functions
 - [x] wireframe the proposal handling function
 - [x] design how the engine starts up from midway or if there are no messages
+- [x] figure out how to trigger the voter releasing its votes:
+      - have a channel that can be used to trigger it manually (for testing)
+      - should allow for triggering after a certain blockTime (from the engine)
+      - should only trigger once, afterwards all proposals that are higher should
+        broadcast as votes right away
 - [x] test first system logic
   - [x] test block proposal from genesis
   - [x] test proposal counting by voter
+  - [x] test vote broadcast before block time
   - [ ] test vote broadcast after block time
   - [ ] test vote counting and appending
   - [ ] test new tip and new proposal (and the cycle continues)

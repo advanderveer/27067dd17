@@ -27,14 +27,15 @@ type Engine struct {
 }
 
 // NewEngine sets up the engine
-func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast) (e *Engine) {
+func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt time.Duration) (e *Engine) {
 	e = &Engine{
-		vrfSK: vrfsk,
-		vrfPK: vrfpk,
-		rxMsg: 0,
-		txMsg: 0,
-		chain: NewChain(),
-		bc:    bc,
+		vrfSK:     vrfsk,
+		vrfPK:     vrfpk,
+		rxMsg:     0,
+		txMsg:     0,
+		chain:     NewChain(),
+		bc:        bc,
+		blockTime: bt,
 	}
 
 	e.ooo = NewOutOfOrder(e.bc, e.chain, e.Handle)
@@ -144,9 +145,14 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 
 	// (2.7) if we are a voter and the block is of the same round as we're voting for
 	// for we will stop casting voting
+	// @TODO check if it is not our own message or vote (how?) can others imitate
 	if e.voter != nil {
-		// @TODO stop/shutdown voting, write out any remaining votes to the broadcast
-		// network
+
+		//send any open votes onto the network and shutdown
+		//@TODO race condition
+		//@TODO ignore our own vote
+		_ = e.voter.Vote(bw)
+		e.voter = nil
 	}
 
 	//append the block in the vote and see if it changes the tip
@@ -194,6 +200,20 @@ func (e *Engine) HandleVoteIntoNewTip(bw BroadcastWriter) (err error) {
 	// timer expires. Write a vote message to the broadcast.
 	if ticket.Vote {
 		e.voter = NewVoter(newround, e.chain, ticket, e.vrfPK)
+
+		//schedule the voter to cast its votes after a configurable amount of time
+		//this determines the pace of the network @TODO can we determine this value
+		//by looking at the chain history
+		if e.blockTime > 0 {
+			time.AfterFunc(e.blockTime, func() {
+				//@TODO protect by mutex, awefully race condition if we're setting the
+				//the voter to nil. This function is called in its own go-routine
+				if e.voter != nil {
+					e.voter.Vote(bw)
+				}
+			})
+		}
+
 		//@TODO pass the broadcast writer to allow the voter to emit votes
 	} else {
 		e.voter = nil

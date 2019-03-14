@@ -16,6 +16,7 @@ func TestSyncronousNetwork(t *testing.T) {
 	chains := make([]*slot.Chain, nmembers)
 	pks := make([][]byte, nmembers)
 	sks := make([]*[vrf.SecretKeySize]byte, nmembers)
+	bw := &testbw{}
 
 	//creat member data
 	var err error
@@ -70,7 +71,7 @@ func TestSyncronousNetwork(t *testing.T) {
 
 		//append all voted blocks to all chains
 		for _, n := range voters {
-			votes := n.Vote()
+			votes := n.Vote(bw)
 			for _, v := range votes {
 				for _, c := range chains {
 

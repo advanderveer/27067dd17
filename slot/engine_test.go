@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/advanderveer/27067dd17/slot"
 	"github.com/advanderveer/27067dd17/vrf"
@@ -17,7 +18,7 @@ func TestBasicMessageHandling(t *testing.T) {
 
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(pk1, sk1, ep1)
+	e1 := slot.NewEngine(pk1, sk1, ep1, 0)
 
 	doneCh := make(chan error)
 	go func() {
@@ -50,7 +51,7 @@ func TestReadError(t *testing.T) {
 	test.Ok(t, err)
 
 	err1 := errors.New("foo")
-	e1 := slot.NewEngine(pk1, sk1, errbc{err1})
+	e1 := slot.NewEngine(pk1, sk1, errbc{err1}, 0)
 	err = e1.Run()
 	test.Assert(t, err != nil, "should result in error")
 
@@ -65,7 +66,7 @@ func TestHandleError(t *testing.T) {
 
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(pk1, sk1, ep1)
+	e1 := slot.NewEngine(pk1, sk1, ep1, 0)
 
 	err = ep1.Write(&slot.Msg{}) //should result in unkown message
 	test.Ok(t, err)
@@ -108,9 +109,10 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 	pk1, sk1, _ := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(pk1, sk1, ep1)
+	bt := time.Millisecond * 50
+	e1 := slot.NewEngine(pk1, sk1, ep1, bt)
 
-	t.Run("propose from genesis", func(t *testing.T) {
+	t.Run("propose a block build up from genesis", func(t *testing.T) {
 		coll1 := collect(t, netw)
 
 		//sending 10 messages schouldn't change anything, as they get de-duplicated
@@ -132,7 +134,7 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 		test.Equals(t, 0, len(votes)) //no votes
 	})
 
-	t.Run("handle proposal", func(t *testing.T) {
+	t.Run("handle proposal as potential votes", func(t *testing.T) {
 		coll1 := collect(t, netw)
 
 		p1 := &slot.Msg{}
@@ -154,4 +156,37 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 		test.Equals(t, uint64(0), rx)
 		test.Equals(t, 1, len(votes)) //1 vote cast
 	})
+
+	t.Run("test proposals coming in and stackin up, released due to time out", func(t *testing.T) {
+		coll1 := collect(t, netw)
+
+		//voter should have written his votes to the network after twice the blocktime
+		time.Sleep(bt * 2)
+
+		msgs := <-coll1()
+		test.Equals(t, 1, len(msgs))
+		test.Equals(t, uint64(1), msgs[0].Vote.Round) //should be a vote for round 1
+	})
+
+	t.Run("new proposal that comes (and is higher) turn into votes right away", func(t *testing.T) {
+
+		//send a block proposal handle that is lower in rank
+		//send a block proposal handle that is higher in rank
+
+	})
+
+	t.Run("close round for causing votes to be broadcasted to the network", func(t *testing.T) {
+		coll1 := collect(t, netw)
+
+		//Write a vote to the network, this will cause our current voter to close
+		//down and write its own votes to the network.
+
+		//trigger the block time switch: this should cause stored proposals to
+		//be released as votes and cause any new proposals that rank higher to
+		//be votes right away
+
+		msgs := <-coll1()
+		_ = msgs
+	})
+
 }
