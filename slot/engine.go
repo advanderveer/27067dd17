@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sync/atomic"
+	"time"
 
 	"github.com/advanderveer/27067dd17/vrf"
 )
@@ -16,11 +17,13 @@ type Engine struct {
 	rxMsg uint64                   //received message count
 	txMsg uint64                   //transmit message count
 
-	minVotes uint64      //minimum nr votes requires before a block is appended
-	bc       Broadcast   //message broadcast  rx/tx
-	chain    *Chain      //holds state for voted blocks
-	voter    *Voter      //hold our voting state (if we have the right)
-	ooo      *OutOfOrder //out-of-order message handling
+	minVotes  uint64        //minimum nr votes requires before a block is appended
+	blockTime time.Duration //the time after which voters will cast their votes to the network
+
+	bc    Broadcast   //message broadcast  rx/tx
+	chain *Chain      //holds state for voted blocks
+	voter *Voter      //hold our voting state (if we have the right)
+	ooo   *OutOfOrder //out-of-order message handling
 }
 
 // NewEngine sets up the engine
@@ -39,9 +42,20 @@ func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast) (e *E
 }
 
 // Stats returns statistics about the engine
-func (e *Engine) Stats() (rx, tx uint64) {
+func (e *Engine) Stats() (rx, tx uint64, votes map[ID]*Block) {
 	rx = atomic.LoadUint64(&e.rxMsg)
 	tx = atomic.LoadUint64(&e.txMsg)
+
+	//@TODO protect with lock
+	if e.voter == nil {
+		return rx, tx, nil
+	}
+
+	votes = make(map[ID]*Block)
+	for id, b := range e.voter.votes {
+		votes[id] = b
+	}
+
 	return
 }
 
@@ -141,13 +155,21 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 		return nil //tip didn't change nothing left to do
 	}
 
+	return e.HandleVoteIntoNewTip(bw)
+}
+
+// HandleVoteIntoNewTip is called when a vote caused the member to experience a
+// new tip.
+func (e *Engine) HandleVoteIntoNewTip(bw BroadcastWriter) (err error) {
+
 	// (2.8) if the tip changed we can now draw another ticket.
 	tipb := e.chain.Read(e.chain.Tip())
 	if tipb == nil {
 		panic("new tip block doesn't exist")
 	}
 
-	//@TODO for which round do we want to draw? always tip round +1?
+	//@TODO for which round do we want to draw? always tip round +1? Can the system
+	//get stuck in a certain round on a certain tip?
 	newround := tipb.Round + 1
 
 	ticket, err := e.chain.Draw(e.vrfPK, e.vrfSK, e.chain.Tip(), newround)
@@ -161,8 +183,10 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 		block := NewBlock(newround, e.chain.Tip(), ticket.Data, ticket.Proof, e.vrfPK)
 		err = bw.Write(&Msg{Proposal: block})
 		if err != nil {
-			//@TODO log the failure of our proposal
+			//@TODO log the failure of writing our proposal to the broadcast
 		}
+
+		atomic.AddUint64(&e.txMsg, 1)
 	}
 
 	// (2.10) if the ticket grants us the right to vote, create a voter for the new
@@ -208,7 +232,7 @@ func (e *Engine) HandleProposal(b *Block, bw BroadcastWriter) (err error) {
 	}
 
 	// (2.4) if we are a voter, check if the proposed block is of the round we are
-	// voting for. If its not
+	// voting for. If its not we stop
 	ok, _ := e.voter.Verify(b)
 	if !ok {
 		return nil

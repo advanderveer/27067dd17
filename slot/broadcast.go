@@ -12,7 +12,7 @@ import (
 // reliabily deliver to all members of the network eventually. It will
 // dedublicate the messages for each reader to prevent a broadcast storm.
 type Broadcast interface {
-	Read(m *Msg) (err error)
+	BroadcastReader
 	BroadcastWriter
 }
 
@@ -20,6 +20,11 @@ type Broadcast interface {
 // can easily be passed around.
 type BroadcastWriter interface {
 	Write(m *Msg) (err error)
+}
+
+// BroadcastReader is the reading part of a broadcast network.
+type BroadcastReader interface {
+	Read(m *Msg) (err error)
 }
 
 // MemNetwork is an in memory broadcast network
@@ -57,7 +62,7 @@ func (netw *MemNetwork) Write(m *Msg) (err error) {
 		ep.mu.Unlock()
 
 		//schedule for reader to pick up
-		ep.rc <- buf
+		ep.rc <- bytes.NewBuffer(buf.Bytes())
 	}
 
 	return nil

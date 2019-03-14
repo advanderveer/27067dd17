@@ -23,9 +23,19 @@ https://github.com/chainpoint/whitepaper/issues/6
      be lucky, but overall it should indicate the size of the network.
 - [x] implement the out of order message handler
 - [x] implement the broadcast deduplication filter
-- [ ] find a way to resolve blocks from the handler functions
+- [x] find a way to resolve blocks from the handler functions
 - [x] wireframe the proposal handling function
-- [ ] design how the engine starts up if there are no messages
+- [x] design how the engine starts up from midway or if there are no messages
+- [x] test first system logic
+  - [x] test block proposal from genesis
+  - [x] test proposal counting by voter
+  - [ ] test vote broadcast after block time
+  - [ ] test vote counting and appending
+  - [ ] test new tip and new proposal (and the cycle continues)
+  - [ ] test the cycle with 2 members
+- [ ] figure out how to protect against grinding attack that tries out many old
+      blocks as 'pref' to find a very high draw
+- [ ] figure out how to protect against a halting of the system (coin death?)
 
 ## Protocol
 - Each member uses its clock to decide in which round we are, each round is a 5s

@@ -64,3 +64,20 @@ func TestBroadcastDedublication(t *testing.T) {
 	test.Ok(t, err)
 	test.Equals(t, msg3.Proposal.Hash(), b1.Hash())
 }
+
+func TestWrite2Many(t *testing.T) {
+	netw := slot.NewMemNetwork()
+	ep1 := netw.Endpoint()
+	ep2 := netw.Endpoint()
+	ep3 := netw.Endpoint()
+
+	test.Ok(t, ep1.Write(&slot.Msg{Proposal: slot.NewBlock(1, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)}))
+
+	msg1 := &slot.Msg{}
+	test.Ok(t, ep2.Read(msg1))
+	test.Equals(t, uint64(1), msg1.Proposal.Round)
+
+	msg2 := &slot.Msg{}
+	test.Ok(t, ep3.Read(msg2))
+	test.Equals(t, uint64(1), msg2.Proposal.Round)
+}
