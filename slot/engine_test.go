@@ -2,7 +2,9 @@ package slot_test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -105,7 +107,7 @@ func collect(t testing.TB, netw *slot.MemNetwork) (done func() chan []*slot.Msg)
 	}
 }
 
-func TestHandleVoteIntoNewTip(t *testing.T) {
+func TestMessageHandlingStepByStep(t *testing.T) {
 	pk1, sk1, _ := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
@@ -213,7 +215,7 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 		//@TODO any out of order messages are not yet resolved
 
 		//should not have enough votes to have the block be appended
-		test.Equals(t, (*slot.Block)(nil), e1.Read(v1.Vote.BlockHash()))
+		test.Equals(t, (*slot.Block)(nil), e1.Chain().Read(v1.Vote.BlockHash()))
 
 		//we imagine another voter that signs another vote (side channel)
 		v2 := voter.Vote(v1.Vote.Block)
@@ -226,11 +228,45 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 		//@TODO test if message order is resolved
 
 		//should not have enough votes to have the block be appended
-		test.Equals(t, v2.Block, e1.Read(v1.Vote.BlockHash()))
+		test.Equals(t, v2.Block, e1.Chain().Read(v1.Vote.BlockHash()))
 
 		msgs := <-coll1()
 		test.Equals(t, 4, len(msgs))                      //v1, v2 relay, closing vote and proposal for the new round
 		test.Equals(t, uint64(2), msgs[3].Proposal.Round) //new proposal, and the cycle starts
 	})
+}
 
+func Test2MemberSeveralRounds(t *testing.T) {
+	netw := slot.NewMemNetwork()
+	coll := collect(t, netw)
+
+	//member 1
+	ep1 := netw.Endpoint()
+	pk1, sk1, _ := vrf.GenerateKey(rand.Reader)
+	e1 := slot.NewEngine(pk1, sk1, ep1, time.Millisecond*5, 1)
+	test.Ok(t, e1.HandleVoteIntoNewTip(ep1))
+
+	//member 2
+	ep2 := netw.Endpoint()
+	pk2, sk2, _ := vrf.GenerateKey(rand.Reader)
+	e2 := slot.NewEngine(pk2, sk2, ep2, time.Millisecond*5, 1)
+	test.Ok(t, e2.HandleVoteIntoNewTip(ep2))
+
+	go func() {
+		test.Ok(t, e1.Run())
+	}()
+
+	go func() {
+		test.Ok(t, e2.Run())
+	}()
+
+	//role it gear
+
+	time.Sleep(time.Millisecond * 400)
+	fmt.Println("e1/e2 round:", e1.Chain().Read(e1.Chain().Tip()).Round, e2.Chain().Read(e2.Chain().Tip()).Round)
+
+	//@TODO basic test seems to get stuck sometimes on 0,0
+	msgs := <-coll()
+	fmt.Println(len(msgs))
+	test.Assert(t, len(msgs) > 10, "should do a decent amount of packages, got: %d", len(msgs))
 }

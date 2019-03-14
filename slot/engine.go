@@ -43,9 +43,9 @@ func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt ti
 	return
 }
 
-// Read a block from the chain, if it doesn't exist it returns nil
-func (e *Engine) Read(id ID) (b *Block) {
-	return e.chain.Read(id)
+// Return the block chain used by the engine
+func (e *Engine) Chain() *Chain {
+	return e.chain
 }
 
 // Stats returns statistics about the engine
@@ -69,8 +69,9 @@ func (e *Engine) Stats() (rx, tx uint64, votes map[ID]*Block) {
 // Run will keep reading messages from the broadcast layer and write new
 // messages to it.
 func (e *Engine) Run() (err error) {
-	curr := &Msg{}
 	for {
+		curr := &Msg{}
+
 		err = e.bc.Read(curr)
 		if err == io.EOF {
 			return ErrBroadcastClosed
