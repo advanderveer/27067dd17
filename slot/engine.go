@@ -18,7 +18,7 @@ type Engine struct {
 
 	minVotes uint64 //minimum nr votes requires before a block is appended
 	chain    *Chain //holds state for voted blocks
-	notary   *Voter //hold our voting state (if we have the right)
+	voter    *Voter //hold our voting state (if we have the right)
 }
 
 // NewEngine sets up the engine
@@ -77,9 +77,10 @@ func (e *Engine) Handle(in *Msg, bw BroadcastWriter) (err error) {
 
 // HandleVote is called when a block with vote comes along. This might be
 // called out-of-order so potentially hours after the message actually arriving
-// on the machine
+// on the machine. @TODO this implementation is currently full of race conditions
+// and should not be called concurrently with any other method
 func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
-	// (2.0) do basic syntax inspection, if any fields are missing or wrong size
+	// (2.0) @TODO do basic syntax inspection, if any fields are missing or wrong size
 	// discard right away.
 
 	// (2.2) verify vote signature and threshold, if invalid discard message. No
@@ -99,7 +100,8 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 	// will take care of message deduplication.
 	err = bw.Write(&Msg{Vote: v})
 	if err != nil {
-		return fmt.Errorf("failed to relay notarized block: %v", err)
+		//@TODO log this, but don't fail
+		// return fmt.Errorf("failed to relay notarized block: %v", err)
 	}
 
 	// (2.5) add vote to a counter of unique votes for that block. If
@@ -111,15 +113,17 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 	//   @TODO how to prevent this?: Every proposer can propose only one block per round
 	nvotes := e.chain.Tally(v)
 
-	// (2.7) if we are a voter and the block is of the same round as we're voting for
-	// for we will stop casting voting
-	// @TODO stop voting
-
 	// (2.6) if the counter passed the vote threshold we can now append the block to our chain.
 	// and resolve any out of order handle calls that are waiting
 	// @TODO can the minvotes be based on chain history?
 	if uint64(nvotes) <= e.minVotes {
 		return nil //not enough votes (yet), the block in this vote is worth nothing (yet)
+	}
+
+	// (2.7) if we are a voter and the block is of the same round as we're voting for
+	// for we will stop casting voting
+	if e.voter != nil {
+		// @TODO stop voting, write out any remaining votes
 	}
 
 	//@TODO resolve out-of-order blocks
@@ -136,8 +140,10 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 		panic("new tip block doesn't exist")
 	}
 
-	//@TODO for which round do we want to draw?
-	ticket, err := e.chain.Draw(e.vrfPK, e.vrfSK, e.chain.Tip(), tipb.Round)
+	//@TODO for which round do we want to draw? always tip round +1?
+	newround := tipb.Round + 1
+
+	ticket, err := e.chain.Draw(e.vrfPK, e.vrfSK, e.chain.Tip(), newround)
 	if err != nil {
 		return fmt.Errorf("failed to draw new ticket: %v", err)
 	}
@@ -145,36 +151,66 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 	// (2.9) if the ticket grants us the right to propose, propose and broadcast the block
 	// with the proof.
 	if ticket.Propose {
-
+		block := NewBlock(newround, e.chain.Tip(), ticket.Data, ticket.Proof, e.vrfPK)
+		err = bw.Write(&Msg{Proposal: block})
+		if err != nil {
+			//@TODO log the failure of our proposal
+		}
 	}
 
 	// (2.10) if the ticket grants us the right to vote, create a voter for the new
 	// round and start handling proposals. And start the BlockTime timer, whenever the
 	// timer expires. Write a vote message to the broadcast.
 	if ticket.Vote {
-
+		e.voter = NewVoter(newround, e.chain, ticket, e.vrfPK)
+		//@TODO pass the broadcast writer to allow the voter to emit votes
+	} else {
+		e.voter = nil
 	}
 
 	return
 }
 
 // HandleProposal is called when a block proposal comes along. This might be
-// potentially hours after the actual message arriving out-of-order.
+// potentially hours after the actual message arriving out-of-order. @TODO
+// this implementation is currently full of race conditions and should not be
+// called concurrently with any other method
 func (e *Engine) HandleProposal(b *Block, bw BroadcastWriter) (err error) {
-	// (2.0) do basic syntax inspection, if any fields are missing or wrong size
+	// (2.0) @TODO do basic syntax inspection, if any fields are missing or wrong size
 	// discard right away.
 
 	// (2.2) if the block's round is equal to the round of our current tip+1 we will
 	// relay the proposal. If not, discard the proposal.
+	tipb := e.chain.Read(e.chain.Tip())
+	if tipb == nil {
+		panic("failed to read tip block")
+	}
+
+	if b.Round != tipb.Round+1 {
+		return nil //discard
+	}
+
+	err = bw.Write(&Msg{Proposal: b})
+	if err != nil {
+		//@TODO log failure to relay
+	}
 
 	// (2.3) if we are not a voter, we can simply stop here and return.
+	if e.voter == nil {
+		return nil
+	}
 
 	// (2.4) if we are a voter, check if the proposed block is of the round we are
 	// voting for. If its not, discard (@TODO check if that is effectively the
 	// the same check as 2.2)
+	ok, _ := e.voter.Verify(b)
+	if !ok {
+		return nil
+	}
 
 	// (2.5) Add the proposed block to the voters current votes. It will be written
 	// to the broadcast on the next timer expiration
+	_, _ = e.voter.Propose(b)
 
 	return
 }

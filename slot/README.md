@@ -23,6 +23,9 @@ https://github.com/chainpoint/whitepaper/issues/6
      be lucky, but overall it should indicate the size of the network.
 - [x] implement the out of order message handler
 - [x] implement the broadcast deduplication filter
+- [ ] find a way to resolve blocks from the handler functions
+- [x] wireframe the proposal handling function
+- [ ] design how the engine starts up if there are no messages
 
 ## Protocol
 - Each member uses its clock to decide in which round we are, each round is a 5s
