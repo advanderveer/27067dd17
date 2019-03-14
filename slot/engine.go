@@ -16,21 +16,25 @@ type Engine struct {
 	rxMsg uint64                   //received message count
 	txMsg uint64                   //transmit message count
 
-	minVotes uint64 //minimum nr votes requires before a block is appended
-	chain    *Chain //holds state for voted blocks
-	voter    *Voter //hold our voting state (if we have the right)
+	minVotes uint64      //minimum nr votes requires before a block is appended
+	bc       Broadcast   //message broadcast  rx/tx
+	chain    *Chain      //holds state for voted blocks
+	voter    *Voter      //hold our voting state (if we have the right)
+	ooo      *OutOfOrder //out-of-order message handling
 }
 
 // NewEngine sets up the engine
-func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte) (e *Engine) {
+func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast) (e *Engine) {
 	e = &Engine{
 		vrfSK: vrfsk,
 		vrfPK: vrfpk,
 		rxMsg: 0,
 		txMsg: 0,
 		chain: NewChain(),
+		bc:    bc,
 	}
 
+	e.ooo = NewOutOfOrder(e.bc, e.chain, e.Handle)
 	return
 }
 
@@ -43,12 +47,10 @@ func (e *Engine) Stats() (rx, tx uint64) {
 
 // Run will keep reading messages from the broadcast layer and write new
 // messages to it.
-func (e *Engine) Run(bc Broadcast) (err error) {
-	ooo := NewOutOfOrder(bc, e.chain, e.Handle)
-
+func (e *Engine) Run() (err error) {
 	curr := &Msg{}
 	for {
-		err = bc.Read(curr)
+		err = e.bc.Read(curr)
 		if err == io.EOF {
 			return ErrBroadcastClosed
 		} else if err != nil {
@@ -56,7 +58,7 @@ func (e *Engine) Run(bc Broadcast) (err error) {
 		}
 
 		n := atomic.AddUint64(&e.rxMsg, 1)
-		err := ooo.Handle(curr)
+		err := e.ooo.Handle(curr)
 		if err != nil {
 			return MsgError{T: curr.Type(), N: n, E: err, M: "handle rx message"}
 		}
@@ -120,13 +122,18 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 		return nil //not enough votes (yet), the block in this vote is worth nothing (yet)
 	}
 
+	//resolve out-of-order blocks, messages can now be handled
+	err = e.ooo.Resolve(v.Block)
+	if err != nil {
+		//@TODO log resolve errors
+	}
+
 	// (2.7) if we are a voter and the block is of the same round as we're voting for
 	// for we will stop casting voting
 	if e.voter != nil {
-		// @TODO stop voting, write out any remaining votes
+		// @TODO stop/shutdown voting, write out any remaining votes to the broadcast
+		// network
 	}
-
-	//@TODO resolve out-of-order blocks
 
 	//append the block in the vote and see if it changes the tip
 	_, newtip := e.chain.Append(v.Block)
@@ -201,8 +208,7 @@ func (e *Engine) HandleProposal(b *Block, bw BroadcastWriter) (err error) {
 	}
 
 	// (2.4) if we are a voter, check if the proposed block is of the round we are
-	// voting for. If its not, discard (@TODO check if that is effectively the
-	// the same check as 2.2)
+	// voting for. If its not
 	ok, _ := e.voter.Verify(b)
 	if !ok {
 		return nil

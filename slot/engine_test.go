@@ -14,13 +14,13 @@ func TestBasicMessageHandling(t *testing.T) {
 	pk1, sk1, err := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	test.Ok(t, err)
 
-	e1 := slot.NewEngine(pk1, sk1)
 	netw := slot.NewMemNetwork()
-
 	ep1 := netw.Endpoint()
+	e1 := slot.NewEngine(pk1, sk1, ep1)
+
 	doneCh := make(chan error)
 	go func() {
-		doneCh <- e1.Run(ep1)
+		doneCh <- e1.Run()
 	}()
 
 	for i := uint64(0); i < 100; i++ {
@@ -48,8 +48,8 @@ func TestReadError(t *testing.T) {
 	test.Ok(t, err)
 
 	err1 := errors.New("foo")
-	e1 := slot.NewEngine(pk1, sk1)
-	err = e1.Run(errbc{err1})
+	e1 := slot.NewEngine(pk1, sk1, errbc{err1})
+	err = e1.Run()
 	test.Assert(t, err != nil, "should result in error")
 
 	msge := err.(slot.MsgError)
@@ -62,14 +62,14 @@ func TestHandleError(t *testing.T) {
 	pk1, sk1, err := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	test.Ok(t, err)
 
-	e1 := slot.NewEngine(pk1, sk1)
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
+	e1 := slot.NewEngine(pk1, sk1, ep1)
 
 	err = ep1.Write(&slot.Msg{}) //should result in unkown message
 	test.Ok(t, err)
 
-	err = e1.Run(ep1)
+	err = e1.Run()
 	test.Assert(t, err != nil, "should result in error")
 
 	msge := err.(slot.MsgError)
