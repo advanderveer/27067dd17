@@ -27,7 +27,7 @@ type Engine struct {
 }
 
 // NewEngine sets up the engine
-func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt time.Duration) (e *Engine) {
+func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt time.Duration, minVotes uint64) (e *Engine) {
 	e = &Engine{
 		vrfSK:     vrfsk,
 		vrfPK:     vrfpk,
@@ -36,10 +36,16 @@ func NewEngine(vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt ti
 		chain:     NewChain(),
 		bc:        bc,
 		blockTime: bt,
+		minVotes:  minVotes,
 	}
 
 	e.ooo = NewOutOfOrder(e.bc, e.chain, e.Handle)
 	return
+}
+
+// Read a block from the chain, if it doesn't exist it returns nil
+func (e *Engine) Read(id ID) (b *Block) {
+	return e.chain.Read(id)
 }
 
 // Stats returns statistics about the engine
@@ -151,7 +157,7 @@ func (e *Engine) HandleVote(v *Vote, bw BroadcastWriter) (err error) {
 		//send any open votes onto the network and shutdown
 		//@TODO race condition
 		//@TODO ignore our own vote
-		_ = e.voter.Vote(bw)
+		_ = e.voter.Cast(bw)
 		e.voter = nil
 	}
 
@@ -209,7 +215,7 @@ func (e *Engine) HandleVoteIntoNewTip(bw BroadcastWriter) (err error) {
 				//@TODO protect by mutex, awefully race condition if we're setting the
 				//the voter to nil. This function is called in its own go-routine
 				if e.voter != nil {
-					e.voter.Vote(bw)
+					e.voter.Cast(bw)
 				}
 			})
 		}

@@ -52,7 +52,7 @@ func TestVoting(t *testing.T) {
 
 	bw := &testbw{} //will writ vote messages
 
-	votes := n1.Vote(bw)
+	votes := n1.Cast(bw)
 	for _, vote := range votes {
 		test.Equals(t, t1, vote.VoteTicket[:])
 		test.Equals(t, p1, vote.VoteProof[:])

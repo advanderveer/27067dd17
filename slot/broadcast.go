@@ -74,7 +74,7 @@ func (netw *MemNetwork) Endpoint() (ep *MemEndpoint) {
 	defer netw.mu.Unlock()
 
 	ep = &MemEndpoint{
-		rc:         make(chan *bytes.Buffer, 1),
+		rc:         make(chan *bytes.Buffer, 100), //@TODO make the buf size configurable
 		dedub:      make(map[[sha256.Size]byte]struct{}),
 		MemNetwork: netw,
 	}

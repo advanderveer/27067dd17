@@ -18,7 +18,7 @@ func TestBasicMessageHandling(t *testing.T) {
 
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(pk1, sk1, ep1, 0)
+	e1 := slot.NewEngine(pk1, sk1, ep1, 0, 0)
 
 	doneCh := make(chan error)
 	go func() {
@@ -51,7 +51,7 @@ func TestReadError(t *testing.T) {
 	test.Ok(t, err)
 
 	err1 := errors.New("foo")
-	e1 := slot.NewEngine(pk1, sk1, errbc{err1}, 0)
+	e1 := slot.NewEngine(pk1, sk1, errbc{err1}, 0, 0)
 	err = e1.Run()
 	test.Assert(t, err != nil, "should result in error")
 
@@ -66,7 +66,7 @@ func TestHandleError(t *testing.T) {
 
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(pk1, sk1, ep1, 0)
+	e1 := slot.NewEngine(pk1, sk1, ep1, 0, 0)
 
 	err = ep1.Write(&slot.Msg{}) //should result in unkown message
 	test.Ok(t, err)
@@ -86,8 +86,8 @@ func collect(t testing.TB, netw *slot.MemNetwork) (done func() chan []*slot.Msg)
 	donec := make(chan []*slot.Msg)
 	go func() {
 		msgs := []*slot.Msg{}
-		msg := &slot.Msg{}
 		for {
+			msg := &slot.Msg{}
 			err := ep.Read(msg)
 			if err == io.EOF {
 				donec <- msgs
@@ -110,7 +110,7 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
 	bt := time.Millisecond * 50
-	e1 := slot.NewEngine(pk1, sk1, ep1, bt)
+	e1 := slot.NewEngine(pk1, sk1, ep1, bt, 1)
 
 	t.Run("propose a block build up from genesis", func(t *testing.T) {
 		coll1 := collect(t, netw)
@@ -168,25 +168,69 @@ func TestHandleVoteIntoNewTip(t *testing.T) {
 		test.Equals(t, uint64(1), msgs[0].Vote.Round) //should be a vote for round 1
 	})
 
-	t.Run("new proposal that comes (and is higher) turn into votes right away", func(t *testing.T) {
+	var voter *slot.Voter
+	t.Run("new proposal that comes (and is higher) turn into a vote right away", func(t *testing.T) {
+		coll1 := collect(t, netw)
 
-		//send a block proposal handle that is lower in rank
-		//send a block proposal handle that is higher in rank
+		//imagine another chain with another pk
+		rb := make([]byte, 32)
+		rb[0] = 0x07 //this eventually draws a ticket that is higher then the current block
+		pk2, sk2, _ := vrf.GenerateKey(bytes.NewReader(rb))
+		c2 := slot.NewChain()
+		ticket, err := c2.Draw(pk2, sk2, c2.Tip(), 1)
+		voter = slot.NewVoter(1, c2, ticket, pk2)
+		test.Ok(t, err)
+		b2 := slot.NewBlock(1, c2.Tip(), ticket.Data, ticket.Proof, pk2)
 
+		//the new proposal should turn into a vote right away
+		err = e1.HandleProposal(b2, ep1)
+		test.Ok(t, err)
+
+		msgs := <-coll1()
+		test.Equals(t, 2, len(msgs))                            //should see just one proposal
+		test.Equals(t, ticket.Data, msgs[0].Proposal.Ticket[:]) //should be relayed
+		test.Equals(t, ticket.Data, msgs[1].Vote.Ticket[:])     //should be turned into vote
 	})
 
 	t.Run("close round for causing votes to be broadcasted to the network", func(t *testing.T) {
 		coll1 := collect(t, netw)
 
-		//Write a vote to the network, this will cause our current voter to close
-		//down and write its own votes to the network.
+		//read the vote that is there for us
+		v1 := &slot.Msg{}
+		err := ep1.Read(v1)
+		test.Ok(t, err)
+		test.Equals(t, uint64(1), v1.Vote.Round)
 
-		//trigger the block time switch: this should cause stored proposals to
-		//be released as votes and cause any new proposals that rank higher to
-		//be votes right away
+		//handle vote (1)
+		err = e1.HandleVote(v1.Vote, ep1)
+		test.Ok(t, err)
+
+		//the exact same vote shouldn't count
+		err = e1.HandleVote(v1.Vote, ep1)
+		test.Ok(t, err)
+
+		//@TODO voter not be set to nil yet
+		//@TODO any out of order messages are not yet resolved
+
+		//should not have enough votes to have the block be appended
+		test.Equals(t, (*slot.Block)(nil), e1.Read(v1.Vote.BlockHash()))
+
+		//we imagine another voter that signs another vote (side channel)
+		v2 := voter.Vote(v1.Vote.Block)
+
+		//this new vote should count, and be relayed
+		err = e1.HandleVote(v2, ep1)
+		test.Ok(t, err)
+
+		//@TODO test that we have a new voter
+		//@TODO test if message order is resolved
+
+		//should not have enough votes to have the block be appended
+		test.Equals(t, v2.Block, e1.Read(v1.Vote.BlockHash()))
 
 		msgs := <-coll1()
-		_ = msgs
+		test.Equals(t, 4, len(msgs))                      //v1, v2 relay, closing vote and proposal for the new round
+		test.Equals(t, uint64(2), msgs[3].Proposal.Round) //new proposal, and the cycle starts
 	})
 
 }

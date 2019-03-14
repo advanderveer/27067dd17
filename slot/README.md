@@ -35,9 +35,9 @@ https://github.com/chainpoint/whitepaper/issues/6
   - [x] test block proposal from genesis
   - [x] test proposal counting by voter
   - [x] test vote broadcast before block time
-  - [ ] test vote broadcast after block time
-  - [ ] test vote counting and appending
-  - [ ] test new tip and new proposal (and the cycle continues)
+  - [x] test vote broadcast after block time
+  - [x] test vote counting and appending
+  - [x] test new tip and new proposal (and the cycle continues)
   - [ ] test the cycle with 2 members
 - [ ] figure out how to protect against grinding attack that tries out many old
       blocks as 'pref' to find a very high draw

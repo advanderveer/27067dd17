@@ -98,7 +98,7 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 
 		//if we can write to the broadcast network, do so right away
 		if v.bw != nil {
-			err := v.bw.Write(&Msg{Vote: v.sign(b)})
+			err := v.bw.Write(&Msg{Vote: v.Vote(b)})
 			if err != nil {
 				//@TODO log this but continue writing other votes
 			}
@@ -114,7 +114,7 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 		//new block that also has the highest score, if possible broadcast right
 		//away
 		if !ok && v.bw != nil {
-			err := v.bw.Write(&Msg{Vote: v.sign(b)})
+			err := v.bw.Write(&Msg{Vote: v.Vote(b)})
 			if err != nil {
 				//@TODO log this but continue writing other votes
 			}
@@ -126,7 +126,8 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 	return false, len(v.votes)
 }
 
-func (v *Voter) sign(b *Block) (bv *Vote) {
+// Vote on the provide block and return the vote that carries it
+func (v *Voter) Vote(b *Block) (bv *Vote) {
 	bv = &Vote{Block: b}
 
 	num := copy(bv.VoteTicket[:], v.ticket.Data)
@@ -147,14 +148,14 @@ func (v *Voter) sign(b *Block) (bv *Vote) {
 	return
 }
 
-// Vote will return the highest scoring blocks the voter it has seen for this
+// Cast our vote and the highest scoring blocks as votes it has seen for this
 // round with a proof that it was allowed to cast a vote. It will also write
 // all the votes to the broadcast writer, and from now on all new highest blocks
 // that are proposed will automatically be broadcasted
-func (v *Voter) Vote(bw BroadcastWriter) (votes []*Vote) {
+func (v *Voter) Cast(bw BroadcastWriter) (votes []*Vote) {
 	v.mu.Lock()
 	for _, b := range v.votes {
-		votes = append(votes, v.sign(b))
+		votes = append(votes, v.Vote(b))
 	}
 
 	v.bw = bw
