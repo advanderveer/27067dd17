@@ -175,7 +175,7 @@ func DecodeBlock(r io.Reader) (b *Block, err error) {
 
 // String the block into something human readable
 func (b *Block) String() string {
-	return fmt.Sprintf("block '%s' proposed by '%s'", BlockName(b.Hash()), PKString(b.PK[:]))
+	return fmt.Sprintf("block '%s(%d)' proposed by '%s'", BlockName(b.Hash()), b.Round, PKString(b.PK[:]))
 }
 
 // Encode the block to the provide writer

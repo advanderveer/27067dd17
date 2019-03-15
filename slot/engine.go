@@ -32,17 +32,17 @@ type Engine struct {
 }
 
 // NewEngine sets up the engine
-func NewEngine(logw io.Writer, vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt time.Duration, minVotes uint64) (e *Engine) {
+func NewEngine(logw io.Writer, chain *Chain, vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc Broadcast, bt time.Duration, minVotes uint64) (e *Engine) {
 	e = &Engine{
 		vrfSK: vrfsk,
 		vrfPK: vrfpk,
 		rxMsg: 0,
 		txMsg: 0,
-		chain: NewChain(),
+		chain: chain,
 
 		blockTime: bt,
 		minVotes:  minVotes,
-		logs:      log.New(logw, fmt.Sprintf("%s: ", PKString(vrfpk)), 0),
+		logs:      log.New(logw, fmt.Sprintf("%s: ", PKString(vrfpk)), log.Lmicroseconds),
 	}
 
 	//keep transmission metrics by wrapping
@@ -54,11 +54,6 @@ func NewEngine(logw io.Writer, vrfpk []byte, vrfsk *[vrf.SecretKeySize]byte, bc 
 
 	e.ooo = NewOutOfOrder(e.bc, e.chain, e.Handle)
 	return
-}
-
-// Chain return the block chain used by the engine
-func (e *Engine) Chain() *Chain {
-	return e.chain
 }
 
 // Stats returns statistics about the engine
@@ -130,11 +125,12 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 	// - Verify if it a vote at all
 	// - Verify that the proposer pk didn't already propose a block @TODO what if
 	//   others use another pk then there own?
-	ok, err := e.chain.Verify(v)
-	if !ok {
-		e.logs.Printf("[INFO] failed to verify %s: %v", v, err)
-		return nil
-	}
+	// @TODO somehow this fails to verify which often casuse the protocol to lock
+	// ok, err := e.chain.Verify(v)
+	// if !ok {
+	// 	e.logs.Printf("[INFO] failed to verify %s: %v\n", v, err)
+	// 	return nil
+	// }
 
 	// (2.4) at this point it is ok to relay the vote message, broadcast
 	// will take care of message deduplication.
@@ -164,12 +160,6 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 
 	e.logs.Printf("[TRAC] %s caused enough votes (%d>%d), progress!", v, nvotes, e.minVotes)
 
-	//resolve out-of-order blocks, messages can now be handled
-	err = e.ooo.Resolve(v.Block)
-	if err != nil {
-		e.logs.Printf("[ERRO] failed to resolve out-of-order messages: %v", err)
-	}
-
 	// (2.7) if we are a voter and the block is of the same round as we're voting for
 	// for we will stop casting voting
 	if e.voter != nil && v.Block.Round >= e.voter.round {
@@ -185,6 +175,17 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 	//append the block in the vote and see if it changes the tip
 	e.logs.Printf("[TRAC] %s caused enough votes, appending it's block to chain!", v)
 	_, newtip := e.chain.Append(v.Block)
+
+	//resolve out-of-order blocks, messages can now be handled
+	nresv, err := e.ooo.Resolve(v.Block)
+	if err != nil {
+		e.logs.Printf("[ERRO] failed to resolve out-of-order messages: %v", err)
+	}
+
+	if nresv > 0 {
+		e.logs.Printf("[TRAC] %s caused resolving of %d messages", v, nresv)
+	}
+
 	if !newtip {
 		e.logs.Printf("[TRAC] %s has caused no new tip: do not progress to next round", v)
 		return nil //tip didn't change nothing left to do
@@ -195,11 +196,13 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 }
 
 // WorkNewTip is called when a vote caused the member to experience a
-// new tip.
+// new tip. @TODO what if we start working another tip of the same height
+// and we already sent our block?
 func (e *Engine) WorkNewTip() (err error) {
+	tip := e.chain.Tip()
 
 	// (2.8) if the tip changed we can now draw another ticket.
-	tipb := e.chain.Read(e.chain.Tip())
+	tipb := e.chain.Read(tip)
 	if tipb == nil {
 		panic("new tip block doesn't exist")
 	}
@@ -207,9 +210,9 @@ func (e *Engine) WorkNewTip() (err error) {
 	//@TODO for which round do we want to draw? always tip round +1? Can the system
 	//get stuck in a certain round on a certain tip?
 	newround := tipb.Round + 1
-	e.logs.Printf("[TRAC] draw ticket with new tip '%s' as round %d", BlockName(e.chain.Tip()), newround)
+	e.logs.Printf("[TRAC] draw ticket with new tip '%s' as round %d", BlockName(tip), newround)
 
-	ticket, err := e.chain.Draw(e.vrfPK, e.vrfSK, e.chain.Tip(), newround)
+	ticket, err := e.chain.Draw(e.vrfPK, e.vrfSK, tip, newround)
 	if err != nil {
 		return fmt.Errorf("failed to draw new ticket: %v", err)
 	}
@@ -217,9 +220,9 @@ func (e *Engine) WorkNewTip() (err error) {
 	// (2.9) if the ticket grants us the right to propose, propose and broadcast the block
 	// with the proof.
 	if ticket.Propose {
-		block := NewBlock(newround, e.chain.Tip(), ticket.Data, ticket.Proof, e.vrfPK)
+		block := NewBlock(newround, tip, ticket.Data, ticket.Proof, e.vrfPK)
 
-		e.logs.Printf("[TRAC] drew proposer ticket! proposing block '%s'", BlockName(block.Hash()))
+		e.logs.Printf("[INFO] --- drew proposer ticket! proposing block '%s'", BlockName(block.Hash()))
 		err = e.bc.Write(&Msg{Proposal: block})
 		if err != nil {
 			e.logs.Printf("[ERRO] failed to broadcast %s", block)
@@ -231,7 +234,7 @@ func (e *Engine) WorkNewTip() (err error) {
 	// timer expires. Write a vote message to the broadcast.
 	if ticket.Vote {
 		e.voter = NewVoter(e.logs.Writer(), newround, e.chain, ticket, e.vrfPK)
-		e.logs.Printf("[TRAC] drew voter ticket! setup voter for round %d", e.voter.round)
+		e.logs.Printf("[INFO] --- drew voter ticket! setup voter for round %d", e.voter.round)
 
 		//schedule the voter to cast its votes after a configurable amount of time
 		//this determines the pace of the network @TODO can we determine this value

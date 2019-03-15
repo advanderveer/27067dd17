@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -21,7 +24,8 @@ func TestBasicMessageHandling(t *testing.T) {
 
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(ioutil.Discard, pk1, sk1, ep1, 0, 0)
+	c1 := slot.NewChain()
+	e1 := slot.NewEngine(ioutil.Discard, c1, pk1, sk1, ep1, 0, 0)
 
 	doneCh := make(chan error)
 	go func() {
@@ -54,7 +58,8 @@ func TestReadError(t *testing.T) {
 	test.Ok(t, err)
 
 	err1 := errors.New("foo")
-	e1 := slot.NewEngine(ioutil.Discard, pk1, sk1, errbc{err1}, 0, 0)
+	c1 := slot.NewChain()
+	e1 := slot.NewEngine(ioutil.Discard, c1, pk1, sk1, errbc{err1}, 0, 0)
 	err = e1.Run()
 	test.Assert(t, err != nil, "should result in error")
 
@@ -69,7 +74,8 @@ func TestHandleError(t *testing.T) {
 
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(ioutil.Discard, pk1, sk1, ep1, 0, 0)
+	c1 := slot.NewChain()
+	e1 := slot.NewEngine(ioutil.Discard, c1, pk1, sk1, ep1, 0, 0)
 
 	err = ep1.Write(&slot.Msg{}) //should result in unkown message
 	test.Ok(t, err)
@@ -113,7 +119,8 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 	netw := slot.NewMemNetwork()
 	ep1 := netw.Endpoint()
 	bt := time.Millisecond * 50
-	e1 := slot.NewEngine(ioutil.Discard, pk1, sk1, ep1, bt, 1)
+	c1 := slot.NewChain()
+	e1 := slot.NewEngine(ioutil.Discard, c1, pk1, sk1, ep1, bt, 1)
 
 	t.Run("propose a block build up from genesis", func(t *testing.T) {
 		coll1 := collect(t, netw)
@@ -216,7 +223,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 		//@TODO any out of order messages are not yet resolved
 
 		//should not have enough votes to have the block be appended
-		test.Equals(t, (*slot.Block)(nil), e1.Chain().Read(v1.Vote.BlockHash()))
+		test.Equals(t, (*slot.Block)(nil), c1.Read(v1.Vote.BlockHash()))
 
 		//we imagine another voter that signs another vote (side channel)
 		v2 := voter.Vote(v1.Vote.Block)
@@ -229,7 +236,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 		//@TODO test if message order is resolved
 
 		//should not have enough votes to have the block be appended
-		test.Equals(t, v2.Block, e1.Chain().Read(v1.Vote.BlockHash()))
+		test.Equals(t, v2.Block, c1.Read(v1.Vote.BlockHash()))
 
 		msgs := <-coll1()
 		test.Equals(t, 4, len(msgs))                      //v1, v2 relay, closing vote and proposal for the new round
@@ -275,11 +282,47 @@ func nameID(idhex string, name string) (reset func()) {
 	}
 }
 
+func drawPNG(t *testing.T, buf io.Reader, name string) {
+	f, err := os.Create(name)
+	test.Ok(t, err)
+	defer f.Close()
+
+	cmd := exec.Command("dot", "-Tpng")
+	cmd.Stdin = buf
+	cmd.Stdout = f
+	test.Ok(t, cmd.Run())
+}
+
+func draw(t testing.TB, c *slot.Chain, w io.Writer) {
+	fmt.Fprintln(w, `digraph {`)
+	tip := c.Tip()
+
+	test.Ok(t, c.Each(func(id slot.ID, b *slot.Block) error {
+		fmt.Fprintf(w, "\t"+`"%.6x" [shape=box,style="filled,solid",label="%.6x:%d"`, id, id, b.Round)
+
+		if id == tip {
+			fmt.Fprintf(w, `,fillcolor="#DDDDDD"`)
+		} else {
+			fmt.Fprintf(w, `,fillcolor="#ffffff"`)
+		}
+
+		//@TODO add any styling
+
+		fmt.Fprintf(w, "]\n")
+		fmt.Fprintf(w, "\t"+`"%.6x" -> "%.6x";`+"\n", id, b.Prev)
+
+		return nil
+	}))
+
+	fmt.Fprintln(w, `}`)
+}
+
 func Test2MemberDeadlockAfterBlockTime(t *testing.T) {
 
 	//setup network
 	netw := slot.NewMemNetwork()
 	coll := collect(t, netw)
+	logs := bytes.NewBuffer(nil)
 
 	//prep debug names and deterministic block input
 	rnd1 := make([]byte, 32)
@@ -296,17 +339,21 @@ func Test2MemberDeadlockAfterBlockTime(t *testing.T) {
 
 	//member 1
 	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(os.Stderr, pk1, sk1, ep1, time.Millisecond*5, 1)
+	c1 := slot.NewChain()
+	e1 := slot.NewEngine(logs, c1, pk1, sk1, ep1, time.Millisecond*5, 1)
 	test.Ok(t, e1.WorkNewTip())
 
 	//member 2
 	ep2 := netw.Endpoint()
-	e2 := slot.NewEngine(os.Stderr, pk2, sk2, ep2, time.Millisecond*5, 1)
+	c2 := slot.NewChain()
+	e2 := slot.NewEngine(logs, c2, pk2, sk2, ep2, time.Millisecond*5, 1)
 	test.Ok(t, e2.WorkNewTip())
 
 	//in the timeline for this test we shouldn't deadlock on the fact that proposals
 	//only start to come in after the intial blocktime has expired for voters.
-	time.Sleep(time.Millisecond * 10)
+	// time.Sleep(time.Millisecond * 10)
+	l1 := log.New(logs, "-----", log.Lmicroseconds)
+	l1.Println()
 
 	go func() {
 		test.Ok(t, e1.Run())
@@ -317,51 +364,259 @@ func Test2MemberDeadlockAfterBlockTime(t *testing.T) {
 	}()
 
 	//wait for a few rounds
-	time.Sleep(time.Millisecond * 400)
+	time.Sleep(time.Millisecond * 1000)
+	l1.Println()
+
+	// @TODO fix and test many: FAILED TO VERIFY false: invalid vote proof
 
 	//collect all messages
 	msgs := <-coll()
-	test.Assert(t, len(msgs) > 10, "should do a decent amount of messages, got: %d", len(msgs))
+
+	exprounds := uint64(20)
+	nround1 := c1.Read(c1.Tip()).Round
+	nround2 := c2.Read(c2.Tip()).Round
+	if nround1 <= exprounds || nround2 <= exprounds {
+
+		//@TODO when this happens we can see that the protocol stops too early, the last
+		//message wasn't send close to the closing
+
+		io.Copy(os.Stderr, logs)
+
+		buf := bytes.NewBuffer(nil)
+		draw(t, c1, buf)
+		drawPNG(t, buf, "00_2m_c1.png")
+
+		buf = bytes.NewBuffer(nil)
+		draw(t, c2, buf)
+		drawPNG(t, buf, "00_2m_c2.png")
+
+		t.Fatalf("failed to reach enough rounds, got to: %d/%d", nround1, nround2)
+
+		// === RUN   Test2MemberDeadlockAfterBlockTime
+		// ana: 16:07:59.082642 [TRAC] draw ticket with new tip 'genesis' as round 1
+		// ana: 16:07:59.084306 [INFO] --- drew proposer ticket! proposing block 'rank2'
+		// ana: 16:07:59.084366 [INFO] --- drew voter ticket! setup voter for round 1
+		// ana: 16:07:59.084370 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// bob: 16:07:59.084387 [TRAC] draw ticket with new tip 'genesis' as round 1
+		// ana: 16:07:59.100469 [TRAC] blocktime has passed, and we are still voter, casted 0 votes
+		// bob: 16:07:59.104551 [INFO] --- drew proposer ticket! proposing block 'rank1'
+		// bob: 16:07:59.104595 [INFO] --- drew voter ticket! setup voter for round 1
+		// bob: 16:07:59.104597 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// -----16:07:59.104599
+		// bob: 16:07:59.104707 [TRAC] block 'rank1(1)' proposed by 'bob': start handling
+		// bob: 16:07:59.104716 [TRAC] block 'rank1(1)' proposed by 'bob' was verified and of the correct round: relaying
+		// bob: 16:07:59.107261 [TRAC] block 'rank1(1)' proposed by 'bob' is new highest ranking block for next vote casting
+		// ana: 16:07:59.107436 [TRAC] block 'rank2(1)' proposed by 'ana': start handling
+		// ana: 16:07:59.107445 [TRAC] block 'rank2(1)' proposed by 'ana' was verified and of the correct round: relaying
+		// ana: 16:07:59.110063 [TRAC] block 'rank2(1)' proposed by 'ana' is new highest ranking block for next vote casting
+		// ana: 16:07:59.110152 [TRAC] block 'rank1(1)' proposed by 'bob': start handling
+		// ana: 16:07:59.110161 [TRAC] block 'rank1(1)' proposed by 'bob' was verified and of the correct round: relaying
+		// ana: 16:07:59.112975 [TRAC] block 'rank1(1)' proposed by 'bob' is new highest ranking block for next vote casting
+		// ana: 16:07:59.113069 [TRAC] vote from 'ana' for block 'rank2(1)' proposed by 'ana': start handling
+		// bob: 16:07:59.117369 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// ana: 16:07:59.117947 [TRAC] verified vote from 'ana' for block 'rank2(1)' proposed by 'ana': relaying
+		// ana: 16:07:59.118045 [TRAC] tallied vote from 'ana' for block 'rank2(1)' proposed by 'ana', number of votes: 1
+		// ana: 16:07:59.118056 [TRAC] vote from 'ana' for block 'rank2(1)' proposed by 'ana' doesn't cause enough votes (1<2): no progress
+		// ana: 16:07:59.118197 [TRAC] vote from 'ana' for block 'rank1(1)' proposed by 'bob': start handling
+		// ana: 16:07:59.123316 [TRAC] verified vote from 'ana' for block 'rank1(1)' proposed by 'bob': relaying
+		// ana: 16:07:59.123381 [TRAC] tallied vote from 'ana' for block 'rank1(1)' proposed by 'bob', number of votes: 1
+		// ana: 16:07:59.123391 [TRAC] vote from 'ana' for block 'rank1(1)' proposed by 'bob' doesn't cause enough votes (1<2): no progress
+		// ana: 16:07:59.123484 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob': start handling
+		// bob: 16:07:59.126615 [TRAC] block 'rank2(1)' proposed by 'ana': start handling
+		// bob: 16:07:59.126626 [TRAC] block 'rank2(1)' proposed by 'ana' was verified and of the correct round: relaying
+		// bob: 16:07:59.129241 [TRAC] block 'rank2(1)' proposed by 'ana' was considered but is not the new higest ranking proposal
+		// bob: 16:07:59.129340 [TRAC] vote from 'ana' for block 'rank2(1)' proposed by 'ana': start handling
+		// bob: 16:07:59.134282 [TRAC] verified vote from 'ana' for block 'rank2(1)' proposed by 'ana': relaying
+		// bob: 16:07:59.134348 [TRAC] tallied vote from 'ana' for block 'rank2(1)' proposed by 'ana', number of votes: 1
+		// bob: 16:07:59.134358 [TRAC] vote from 'ana' for block 'rank2(1)' proposed by 'ana' doesn't cause enough votes (1<2): no progress
+		// bob: 16:07:59.134453 [TRAC] vote from 'ana' for block 'rank1(1)' proposed by 'bob': start handling
+		// bob: 16:07:59.139405 [TRAC] verified vote from 'ana' for block 'rank1(1)' proposed by 'bob': relaying
+		// bob: 16:07:59.139472 [TRAC] tallied vote from 'ana' for block 'rank1(1)' proposed by 'bob', number of votes: 1
+		// bob: 16:07:59.139481 [TRAC] vote from 'ana' for block 'rank1(1)' proposed by 'bob' doesn't cause enough votes (1<2): no progress
+		// bob: 16:07:59.139573 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob': start handling
+		// bob: 16:07:59.144707 [TRAC] verified vote from 'bob' for block 'rank1(1)' proposed by 'bob': relaying
+		// bob: 16:07:59.144772 [TRAC] tallied vote from 'bob' for block 'rank1(1)' proposed by 'bob', number of votes: 2
+		// bob: 16:07:59.144782 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' caused enough votes (2>1), progress!
+		// bob: 16:07:59.144845 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' while voter was active, casted remaining 1 votes before teardown
+		// bob: 16:07:59.144854 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' caused enough votes, appending it's block to chain!
+		// bob: 16:07:59.144885 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' has caused a new tip: progress to next round
+		// bob: 16:07:59.144886 [TRAC] draw ticket with new tip 'rank1' as round 2
+		// bob: 16:07:59.146483 [INFO] --- drew proposer ticket! proposing block 'da1fcdfe'
+		// bob: 16:07:59.146531 [INFO] --- drew voter ticket! setup voter for round 2
+		// bob: 16:07:59.146533 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// bob: 16:07:59.146624 [TRAC] block 'da1fcdfe(2)' proposed by 'bob': start handling
+		// bob: 16:07:59.146634 [TRAC] block 'da1fcdfe(2)' proposed by 'bob' was verified and of the correct round: relaying
+		// bob: 16:07:59.149155 [TRAC] block 'da1fcdfe(2)' proposed by 'bob' is new highest ranking block for next vote casting
+		// ana: 16:07:59.151542 [TRAC] verified vote from 'bob' for block 'rank1(1)' proposed by 'bob': relaying
+		// ana: 16:07:59.151605 [TRAC] tallied vote from 'bob' for block 'rank1(1)' proposed by 'bob', number of votes: 2
+		// ana: 16:07:59.151615 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' caused enough votes (2>1), progress!
+		// ana: 16:07:59.151679 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' while voter was active, casted remaining 1 votes before teardown
+		// ana: 16:07:59.151688 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' caused enough votes, appending it's block to chain!
+		// ana: 16:07:59.151716 [TRAC] vote from 'bob' for block 'rank1(1)' proposed by 'bob' has caused a new tip: progress to next round
+		// ana: 16:07:59.151718 [TRAC] draw ticket with new tip 'rank1' as round 2
+		// bob: 16:07:59.152719 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// bob: 16:07:59.152811 [TRAC] vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob': start handling
+		// ana: 16:07:59.153303 [INFO] --- drew proposer ticket! proposing block '12b3d6da'
+		// ana: 16:07:59.153345 [INFO] --- drew voter ticket! setup voter for round 2
+		// ana: 16:07:59.153346 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// ana: 16:07:59.153440 [TRAC] block 'da1fcdfe(2)' proposed by 'bob': start handling
+		// ana: 16:07:59.153449 [TRAC] block 'da1fcdfe(2)' proposed by 'bob' was verified and of the correct round: relaying
+		// ana: 16:07:59.155961 [TRAC] block 'da1fcdfe(2)' proposed by 'bob' is new highest ranking block for next vote casting
+		// ana: 16:07:59.156054 [TRAC] vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob': start handling
+		// bob: 16:07:59.157753 [TRAC] verified vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob': relaying
+		// bob: 16:07:59.157818 [TRAC] tallied vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob', number of votes: 1
+		// bob: 16:07:59.157827 [TRAC] vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob' doesn't cause enough votes (1<2): no progress
+		// bob: 16:07:59.157912 [TRAC] block '12b3d6da(2)' proposed by 'ana': start handling
+		// bob: 16:07:59.157922 [TRAC] block '12b3d6da(2)' proposed by 'ana' was verified and of the correct round: relaying
+		// bob: 16:07:59.160544 [TRAC] block '12b3d6da(2)' proposed by 'ana' is new highest ranking block for next vote casting
+		// bob: 16:07:59.160687 [TRAC] vote from 'bob' for block '12b3d6da(2)' proposed by 'ana': start handling
+		// bob: 16:07:59.165672 [TRAC] verified vote from 'bob' for block '12b3d6da(2)' proposed by 'ana': relaying
+		// bob: 16:07:59.165740 [TRAC] tallied vote from 'bob' for block '12b3d6da(2)' proposed by 'ana', number of votes: 1
+		// bob: 16:07:59.165750 [TRAC] vote from 'bob' for block '12b3d6da(2)' proposed by 'ana' doesn't cause enough votes (1<2): no progress
+		// ana: 16:07:59.185957 [TRAC] verified vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob': relaying
+		// ana: 16:07:59.186022 [TRAC] tallied vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob', number of votes: 1
+		// ana: 16:07:59.186032 [TRAC] vote from 'bob' for block 'da1fcdfe(2)' proposed by 'bob' doesn't cause enough votes (1<2): no progress
+		// ana: 16:07:59.186115 [TRAC] block '12b3d6da(2)' proposed by 'ana': start handling
+		// ana: 16:07:59.186172 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// ana: 16:07:59.186182 [TRAC] block '12b3d6da(2)' proposed by 'ana' was verified and of the correct round: relaying
+		// ana: 16:07:59.188777 [TRAC] block '12b3d6da(2)' proposed by 'ana' is new highest ranking block for next vote casting
+		// ana: 16:07:59.188871 [TRAC] vote from 'bob' for block '12b3d6da(2)' proposed by 'ana': start handling
+		// ana: 16:07:59.193759 [TRAC] verified vote from 'bob' for block '12b3d6da(2)' proposed by 'ana': relaying
+		// ana: 16:07:59.193823 [TRAC] tallied vote from 'bob' for block '12b3d6da(2)' proposed by 'ana', number of votes: 1
+		// ana: 16:07:59.193832 [TRAC] vote from 'bob' for block '12b3d6da(2)' proposed by 'ana' doesn't cause enough votes (1<2): no progress
+		// ana: 16:07:59.193929 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob': start handling
+		// ana: 16:07:59.198850 [TRAC] verified vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob': relaying
+		// ana: 16:07:59.198920 [TRAC] tallied vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob', number of votes: 2
+		// ana: 16:07:59.198929 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' caused enough votes (2>1), progress!
+		// ana: 16:07:59.199002 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' while voter was active, casted remaining 1 votes before teardown
+		// ana: 16:07:59.199011 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' caused enough votes, appending it's block to chain!
+		// ana: 16:07:59.199045 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' has caused a new tip: progress to next round
+		// ana: 16:07:59.199047 [TRAC] draw ticket with new tip 'da1fcdfe' as round 3
+		// ana: 16:07:59.200650 [INFO] --- drew proposer ticket! proposing block 'ebe9f65d'
+		// ana: 16:07:59.200693 [INFO] --- drew voter ticket! setup voter for round 3
+		// ana: 16:07:59.200694 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// ana: 16:07:59.200791 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana': start handling
+		// ana: 16:07:59.205773 [TRAC] verified vote from 'ana' for block '12b3d6da(2)' proposed by 'ana': relaying
+		// ana: 16:07:59.205840 [TRAC] tallied vote from 'ana' for block '12b3d6da(2)' proposed by 'ana', number of votes: 2
+		// ana: 16:07:59.205850 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana' caused enough votes (2>1), progress!
+		// ana: 16:07:59.205867 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana' caused enough votes, appending it's block to chain!
+		// ana: 16:07:59.205912 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana' has caused a new tip: progress to next round
+		// ana: 16:07:59.205913 [TRAC] draw ticket with new tip '12b3d6da' as round 3
+		// ana: 16:07:59.207487 [INFO] --- drew proposer ticket! proposing block 'a28e88b8'
+		// ana: 16:07:59.207528 [INFO] --- drew voter ticket! setup voter for round 3
+		// ana: 16:07:59.207530 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// ana: 16:07:59.207617 [TRAC] block 'ebe9f65d(3)' proposed by 'ana': start handling
+		// ana: 16:07:59.207627 [TRAC] block 'ebe9f65d(3)' proposed by 'ana' was verified and of the correct round: relaying
+		// bob: 16:07:59.208816 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob': start handling
+		// bob: 16:07:59.213709 [TRAC] verified vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob': relaying
+		// bob: 16:07:59.213774 [TRAC] tallied vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob', number of votes: 2
+		// bob: 16:07:59.213784 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' caused enough votes (2>1), progress!
+		// bob: 16:07:59.213847 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' while voter was active, casted remaining 1 votes before teardown
+		// bob: 16:07:59.213857 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' caused enough votes, appending it's block to chain!
+		// bob: 16:07:59.213888 [TRAC] vote from 'ana' for block 'da1fcdfe(2)' proposed by 'bob' has caused a new tip: progress to next round
+		// bob: 16:07:59.213890 [TRAC] draw ticket with new tip 'da1fcdfe' as round 3
+		// bob: 16:07:59.215494 [INFO] --- drew proposer ticket! proposing block 'd012ae96'
+		// bob: 16:07:59.215538 [INFO] --- drew voter ticket! setup voter for round 3
+		// bob: 16:07:59.215539 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// bob: 16:07:59.215635 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana': start handling
+		// bob: 16:07:59.220621 [TRAC] verified vote from 'ana' for block '12b3d6da(2)' proposed by 'ana': relaying
+		// bob: 16:07:59.220685 [TRAC] tallied vote from 'ana' for block '12b3d6da(2)' proposed by 'ana', number of votes: 2
+		// bob: 16:07:59.220695 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana' caused enough votes (2>1), progress!
+		// bob: 16:07:59.220711 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana' caused enough votes, appending it's block to chain!
+		// bob: 16:07:59.220755 [TRAC] vote from 'ana' for block '12b3d6da(2)' proposed by 'ana' has caused a new tip: progress to next round
+		// bob: 16:07:59.220757 [TRAC] draw ticket with new tip '12b3d6da' as round 3
+		// ana: 16:07:59.221716 [TRAC] block 'ebe9f65d(3)' proposed by 'ana' is new highest ranking block for next vote casting
+		// ana: 16:07:59.221805 [TRAC] block 'a28e88b8(3)' proposed by 'ana': start handling
+		// ana: 16:07:59.221882 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// ana: 16:07:59.221893 [TRAC] block 'a28e88b8(3)' proposed by 'ana' was verified and of the correct round: relaying
+		// bob: 16:07:59.222336 [INFO] --- drew proposer ticket! proposing block '276fa2d2'
+		// bob: 16:07:59.222379 [INFO] --- drew voter ticket! setup voter for round 3
+		// bob: 16:07:59.222380 [TRAC] blocktime is higher then zero, schedule vote casting in 5ms
+		// bob: 16:07:59.222467 [TRAC] block 'ebe9f65d(3)' proposed by 'ana': start handling
+		// bob: 16:07:59.222476 [TRAC] block 'ebe9f65d(3)' proposed by 'ana' was verified and of the correct round: relaying
+		// ana: 16:07:59.224460 [TRAC] block 'a28e88b8(3)' proposed by 'ana' was considered but is not the new higest ranking proposal
+		// ana: 16:07:59.224544 [TRAC] block 'd012ae96(3)' proposed by 'bob': start handling
+		// ana: 16:07:59.224554 [TRAC] block 'd012ae96(3)' proposed by 'bob' was verified and of the correct round: relaying
+		// bob: 16:07:59.224998 [TRAC] block 'ebe9f65d(3)' proposed by 'ana' is new highest ranking block for next vote casting
+		// bob: 16:07:59.225082 [TRAC] block 'a28e88b8(3)' proposed by 'ana': start handling
+		// bob: 16:07:59.225091 [TRAC] block 'a28e88b8(3)' proposed by 'ana' was verified and of the correct round: relaying
+		// bob: 16:07:59.227533 [TRAC] block 'a28e88b8(3)' proposed by 'ana' was considered but is not the new higest ranking proposal
+		// bob: 16:07:59.227627 [TRAC] block 'd012ae96(3)' proposed by 'bob': start handling
+		// bob: 16:07:59.227636 [TRAC] block 'd012ae96(3)' proposed by 'bob' was verified and of the correct round: relaying
+		// ana: 16:07:59.227887 [TRAC] block 'd012ae96(3)' proposed by 'bob' is new highest ranking block for next vote casting
+		// ana: 16:07:59.227983 [TRAC] vote from 'ana' for block 'ebe9f65d(3)' proposed by 'ana': start handling
+		// ana: 16:07:59.228047 [INFO] failed to verify vote from 'ana' for block 'ebe9f65d(3)' proposed by 'ana': invalid vote proof
+		// ana: 16:07:59.228138 [TRAC] block '276fa2d2(3)' proposed by 'bob': start handling
+		// ana: 16:07:59.228148 [TRAC] block '276fa2d2(3)' proposed by 'bob' was verified and of the correct round: relaying
+		// bob: 16:07:59.230130 [TRAC] block 'd012ae96(3)' proposed by 'bob' is new highest ranking block for next vote casting
+		// bob: 16:07:59.230224 [TRAC] vote from 'ana' for block 'ebe9f65d(3)' proposed by 'ana': start handling
+		// bob: 16:07:59.230236 [INFO] failed to verify vote from 'ana' for block 'ebe9f65d(3)' proposed by 'ana': invalid vote proof
+		// bob: 16:07:59.230318 [TRAC] block '276fa2d2(3)' proposed by 'bob': start handling
+		// bob: 16:07:59.230329 [TRAC] block '276fa2d2(3)' proposed by 'bob' was verified and of the correct round: relaying
+		// ana: 16:07:59.230759 [TRAC] block '276fa2d2(3)' proposed by 'bob' was considered but is not the new higest ranking proposal
+		// ana: 16:07:59.230855 [TRAC] vote from 'ana' for block 'd012ae96(3)' proposed by 'bob': start handling
+		// ana: 16:07:59.230868 [INFO] failed to verify vote from 'ana' for block 'd012ae96(3)' proposed by 'bob': invalid vote proof
+		// ana: 16:07:59.231403 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// bob: 16:07:59.245346 [TRAC] block '276fa2d2(3)' proposed by 'bob' was considered but is not the new higest ranking proposal
+		// bob: 16:07:59.245438 [TRAC] vote from 'ana' for block 'd012ae96(3)' proposed by 'bob': start handling
+		// bob: 16:07:59.245498 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// ana: 16:07:59.245586 [TRAC] vote from 'bob' for block 'd012ae96(3)' proposed by 'bob': start handling
+		// ana: 16:07:59.245599 [INFO] failed to verify vote from 'bob' for block 'd012ae96(3)' proposed by 'bob': invalid vote proof
+		// bob: 16:07:59.245669 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+		// bob: 16:07:59.245682 [INFO] failed to verify vote from 'ana' for block 'd012ae96(3)' proposed by 'bob': invalid vote proof
+		// bob: 16:07:59.245772 [TRAC] vote from 'bob' for block 'd012ae96(3)' proposed by 'bob': start handling
+		// bob: 16:07:59.245784 [INFO] failed to verify vote from 'bob' for block 'd012ae96(3)' proposed by 'bob': invalid vote proof
+		// -----16:08:00.107992
+
+	}
+
+	test.Assert(t, uint64(len(msgs)) > exprounds, "should do a decent amount of messages, got: %d", len(msgs))
 }
 
-func Test2MemberDeadlock0minSize(t *testing.T) {
-	netw := slot.NewMemNetwork()
-	coll := collect(t, netw)
-
-	//prep debug names and deterministic block input
-	rnd1 := make([]byte, 32)
-	rnd1[0] = 0x01
-	rnd2 := make([]byte, 32)
-	rnd2[0] = 0x02
-	pk1, sk1, _ := vrf.GenerateKey(bytes.NewReader(rnd1)) //ana
-	pk2, sk2, _ := vrf.GenerateKey(bytes.NewReader(rnd2)) //bob
-	defer namePK(pk1, "eve")()
-	defer namePK(pk2, "kim")()
-	defer nameID("6d9c54dee566", "genesis")()
-	defer nameID("20bb90498d6b", "b1")()
-	defer nameID("cf71746031e0", "b2")()
-
-	//member 1
-	ep1 := netw.Endpoint()
-	e1 := slot.NewEngine(os.Stderr, pk1, sk1, ep1, time.Millisecond*5, 0)
-	test.Ok(t, e1.WorkNewTip())
-
-	//member 2
-	ep2 := netw.Endpoint()
-	e2 := slot.NewEngine(os.Stderr, pk2, sk2, ep2, time.Millisecond*5, 0)
-	test.Ok(t, e2.WorkNewTip())
-
-	go func() {
-		test.Ok(t, e1.Run())
-	}()
-
-	go func() {
-		test.Ok(t, e2.Run())
-	}()
-
-	time.Sleep(time.Millisecond * 400)
-
-	//should see a decent amount of messages if it doesn't deadlock
-	msgs := <-coll()
-	test.Assert(t, len(msgs) > 10, "should do a decent amount of messages, got: %d", len(msgs))
-}
+// func Test2MemberDeadlock0minSize(t *testing.T) {
+// 	netw := slot.NewMemNetwork()
+// 	coll := collect(t, netw)
+//
+// 	//prep debug names and deterministic block input
+// 	rnd1 := make([]byte, 32)
+// 	rnd1[0] = 0x01
+// 	rnd2 := make([]byte, 32)
+// 	rnd2[0] = 0x02
+// 	pk1, sk1, _ := vrf.GenerateKey(bytes.NewReader(rnd1)) //ana
+// 	pk2, sk2, _ := vrf.GenerateKey(bytes.NewReader(rnd2)) //bob
+// 	defer namePK(pk1, "eve")()
+// 	defer namePK(pk2, "kim")()
+// 	defer nameID("6d9c54dee566", "genesis")()
+// 	defer nameID("20bb90498d6b", "b1")()
+// 	defer nameID("cf71746031e0", "b2")()
+//
+// 	//member 1
+// 	ep1 := netw.Endpoint()
+// 	c1 := slot.NewChain()
+// 	e1 := slot.NewEngine(os.Stderr, c1, pk1, sk1, ep1, time.Millisecond*5, 0)
+// 	test.Ok(t, e1.WorkNewTip())
+//
+// 	//member 2
+// 	ep2 := netw.Endpoint()
+// 	c2 := slot.NewChain()
+// 	e2 := slot.NewEngine(os.Stderr, c2, pk2, sk2, ep2, time.Millisecond*5, 0)
+// 	test.Ok(t, e2.WorkNewTip())
+//
+// 	go func() {
+// 		test.Ok(t, e1.Run())
+// 	}()
+//
+// 	go func() {
+// 		test.Ok(t, e2.Run())
+// 	}()
+//
+// 	time.Sleep(time.Millisecond * 400)
+//
+// 	//should see a decent amount of messages if it doesn't deadlock
+// 	msgs := <-coll()
+// 	test.Assert(t, len(msgs) > 10, "should do a decent amount of messages, got: %d", len(msgs))
+//
+// 	test.Equals(t, c1.Tip(), c2.Tip())
+// 	tipb := c1.Read(c1.Tip())
+// 	fmt.Println("ROUND", tipb.Round)
+// }

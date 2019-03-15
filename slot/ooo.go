@@ -33,19 +33,20 @@ func NewOutOfOrder(bw BroadcastWriter, br BlockReader, h func(in *Msg, bw Broadc
 
 // Resolve is called when another system has stored a notarized block into our
 // chain which might allow us to resolve deferred handles.
-func (o *OutOfOrder) Resolve(b *Block) (err error) {
+func (o *OutOfOrder) Resolve(b *Block) (n int, err error) {
 	id := b.Hash()
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
 	orphans, ok := o.orphans[id]
 	if !ok {
-		return nil //nothing to de-orphan
+		return n, nil //nothing to de-orphan
 	}
 
 	var errs []error
 	for _, msg := range orphans {
 		err = o.handle(msg, o.bw)
+		n++
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -55,7 +56,7 @@ func (o *OutOfOrder) Resolve(b *Block) (err error) {
 	//de-orphaning them again anway (how ungratefull)
 	delete(o.orphans, id)
 	if len(errs) > 0 {
-		return ResolveErr(errs)
+		return n, ResolveErr(errs)
 	}
 
 	return

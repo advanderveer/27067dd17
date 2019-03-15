@@ -63,11 +63,15 @@ func TestOutOfOrderSimple(t *testing.T) {
 	test.Ok(t, o.Handle(msg1)) //then msg1 arrives, goes trough right away
 	test.Equals(t, []slot.ID{v1.BlockHash()}, handles)
 
-	test.Ok(t, o.Resolve(v1.Block))
+	n, err := o.Resolve(v1.Block)
+	test.Ok(t, err)
+	test.Equals(t, 1, n)
 	test.Equals(t, []slot.ID{v1.BlockHash(), v2.BlockHash()}, handles)
 
 	//resolving again should not cause another handle
-	test.Ok(t, o.Resolve(v1.Block))
+	n, err = o.Resolve(v1.Block)
+	test.Ok(t, err)
+	test.Equals(t, 0, n)
 	test.Equals(t, []slot.ID{v1.BlockHash(), v2.BlockHash()}, handles)
 
 	//v4 should succeed because v3 was already written before any handling
@@ -76,7 +80,7 @@ func TestOutOfOrderSimple(t *testing.T) {
 
 	t.Run("error resolve", func(t *testing.T) {
 		test.Ok(t, o.Handle(&slot.Msg{Vote: v6}))
-		err := o.Resolve(v5.Block)
+		_, err = o.Resolve(v5.Block)
 		test.Equals(t, "failed to resolve out-of-order messages: foo", err.Error())
 	})
 }

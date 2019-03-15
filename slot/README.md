@@ -45,6 +45,8 @@ https://github.com/chainpoint/whitepaper/issues/6
   - [x] create a telemetry wrapper for broadcast for metrics
   - [x] create utility function for named PKs and Blocks
   - [x] fix deadlock for 0 minVotes scenario
+  - [ ] draw chain shape to look at shape
+  - [ ] assert consensus
   - [ ] fix race detections
   - [ ] fix deadlock when using race detector
 

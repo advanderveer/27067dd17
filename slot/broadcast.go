@@ -30,7 +30,7 @@ type BroadcastReader interface {
 // MemNetwork is an in memory broadcast network
 type MemNetwork struct {
 	eps map[*MemEndpoint]struct{}
-	mu  sync.Mutex
+	mu  sync.RWMutex
 }
 
 // NewMemNetwork creates a new memory network, it will correctly copy messages
@@ -48,6 +48,8 @@ func (netw *MemNetwork) Write(m *Msg) (err error) {
 		return err //failed to encode
 	}
 
+	netw.mu.RLock()
+	defer netw.mu.RUnlock()
 	for ep := range netw.eps {
 
 		//deduplicate messages
@@ -105,10 +107,9 @@ func (ep *MemEndpoint) Read(m *Msg) (err error) {
 // Close will shutdown the endpoint, reads will return EOF and writes
 // to the network will no longer be send to this endpoint
 func (ep *MemEndpoint) Close() (err error) {
-	close(ep.rc)
-
 	ep.MemNetwork.mu.Lock()
 	defer ep.MemNetwork.mu.Unlock()
+	close(ep.rc)
 	delete(ep.MemNetwork.eps, ep)
 	return
 }

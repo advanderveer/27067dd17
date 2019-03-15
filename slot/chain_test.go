@@ -197,6 +197,17 @@ func TestChainAppending(t *testing.T) {
 	test.Equals(t, n, uint64(len(ids)))
 	test.Equals(t, "5814292125257717654856305910480344465283549495696731797414878196001414625954011", strength.FloatString(0))
 
+	//walk each block
+	var j uint64
+	test.Ok(t, c.Each(func(id slot.ID, b *slot.Block) error {
+		j++
+		test.Assert(t, id != slot.NilID, "should all have id")
+		test.Assert(t, b != nil, "should see blocks")
+		return nil
+	}))
+
+	test.Equals(t, uint64(n+1), j) //100 plus genesis
+
 	//walk backwards from the new tip
 	test.Ok(t, c.Walk(c.Tip(), func(id slot.ID, b *slot.Block, rank int) error {
 		n--

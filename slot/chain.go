@@ -101,6 +101,7 @@ func (c *Chain) Verify(v *Vote) (ok bool, err error) {
 	seed := Seed(prevb, v.Round)
 
 	//Verify the voting proof
+	//@TODO this seems to fail (sometime?)
 	if !vrf.Verify(v.VotePK[:], seed, v.VoteTicket[:], v.VoteProof[:]) {
 		return false, ErrVoteProof
 	}
@@ -245,6 +246,20 @@ func (c *Chain) Append(b *Block) (id ID, newtip bool) {
 	if tipStrength.Cmp(prevStrength) < 0 {
 		c.tip = id
 		newtip = true
+	}
+
+	return
+}
+
+// Each iterates over all blocks in random order, calling f for each block
+func (c *Chain) Each(f func(bid ID, b *Block) error) (err error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for id, b := range c.blocks {
+		err = f(id, b)
+		if err != nil {
+			return
+		}
 	}
 
 	return
