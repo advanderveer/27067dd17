@@ -1,6 +1,7 @@
 package slot_test
 
 import (
+	"io/ioutil"
 	"testing"
 
 	"github.com/advanderveer/27067dd17/slot"
@@ -23,7 +24,7 @@ func TestVoting(t *testing.T) {
 	pk1[0] = 0x01
 
 	r1 := blocks{}
-	n1 := slot.NewVoter(1, r1, slot.Ticket{Data: t1, Proof: p1}, pk1)
+	n1 := slot.NewVoter(ioutil.Discard, 1, r1, slot.Ticket{Data: t1, Proof: p1}, pk1)
 	b1 := slot.NewBlock(2, slot.NilID, ticketS1[:], slot.NilProof, slot.NilPK)
 	b2 := slot.NewBlock(3, slot.NilID, ticketS2[:], slot.NilProof, slot.NilPK)
 	b3 := slot.NewBlock(4, slot.NilID, ticketS2[:], slot.NilProof, slot.NilPK)

@@ -38,7 +38,13 @@ https://github.com/chainpoint/whitepaper/issues/6
   - [x] test vote broadcast after block time
   - [x] test vote counting and appending
   - [x] test new tip and new proposal (and the cycle continues)
-  - [ ] test the cycle with 2 members
+  - [x] test the cycle with 2 members
+  -   [x] add some debug utilities. label members and blocks in logs (compile flag?)
+  -   [x] debug deadlock where one vote gets lost amongst 2 members with messages only
+          flowing after blocktime has expired
+  - [x] create a telemetry wrapper for broadcast for metrics
+
+
 - [ ] figure out how to protect against grinding attack that tries out many old
       blocks as 'pref' to find a very high draw
 - [ ] figure out how to protect against a halting of the system (coin death?)

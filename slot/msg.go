@@ -42,6 +42,17 @@ func (m *Msg) Type() MsgType {
 	}
 }
 
+func (m *Msg) String() string {
+	switch m.Type() {
+	case MsgTypeProposal:
+		return fmt.Sprintf("P: block:%s prev:%s proposer:%s", BlockName(m.Proposal.Hash()), BlockName(m.Proposal.Prev), PKString(m.Proposal.PK[:]))
+	case MsgTypeVote:
+		return fmt.Sprintf("V: block:%s prev:%s proposer:%s voter:%s", BlockName(m.Vote.Block.Hash()), BlockName(m.Vote.Block.Prev), PKString(m.Vote.Block.PK[:]), PKString(m.Vote.VotePK[:]))
+	default:
+		panic("not implemented")
+	}
+}
+
 const (
 	//IDSize is the size of a block ID
 	IDSize = 32
@@ -108,6 +119,11 @@ func (v *Vote) BlockHash() (id ID) {
 	return v.Block.Hash()
 }
 
+// String the vote into something human readable
+func (v *Vote) String() string {
+	return fmt.Sprintf("vote from '%s' for %s", PKString(v.VotePK[:]), v.Block.String())
+}
+
 //Block holds the data the algorithm is trying to reach consensus over.
 type Block struct {
 	Round  uint64
@@ -157,6 +173,11 @@ func DecodeBlock(r io.Reader) (b *Block, err error) {
 	return
 }
 
+// String the block into something human readable
+func (b *Block) String() string {
+	return fmt.Sprintf("block '%s' proposed by '%s'", BlockName(b.Hash()), PKString(b.PK[:]))
+}
+
 // Encode the block to the provide writer
 func (b *Block) Encode(w io.Writer) (err error) {
 	for _, v := range []interface{}{
@@ -168,6 +189,30 @@ func (b *Block) Encode(w io.Writer) (err error) {
 	} {
 		err := binary.Write(w, binary.LittleEndian, v)
 		if err != nil {
+
+			// bizarly, this panics sometimes while running the engine test:
+			// panic: failed to encode block: failed to write binary data: foo
+			//
+			// goroutine 65 [running]:
+			// github.com/advanderveer/27067dd17/slot.(*Block).Hash(0xc000264000, 0x0, 0x0, 0x0, 0x0)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/msg.go:183 +0x18d
+			// github.com/advanderveer/27067dd17/slot.(*Chain).Tally(0xc0000801e0, 0xc0002c6000, 0x0)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/chain.go:64 +0x94
+			// github.com/advanderveer/27067dd17/slot.(*Engine).HandleVote(0xc000306540, 0xc0002c6000, 0x12034c0, 0xc000303b60, 0xc000168658, 0xc00027fe01)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/engine.go:138 +0xd8
+			// github.com/advanderveer/27067dd17/slot.(*Engine).Handle(0xc000306540, 0xc00016ae80, 0x12034c0, 0xc000303b60, 0x91dbf802cc5aea8e, 0xaaf14237d9832616)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/engine.go:94 +0x117
+			// github.com/advanderveer/27067dd17/slot.(*OutOfOrder).Handle(0xc000271a00, 0xc00016ae80, 0x0, 0x0)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/ooo.go:96 +0x32d
+			// github.com/advanderveer/27067dd17/slot.(*Engine).Run(0xc000306540, 0x0, 0x0)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/engine.go:83 +0xcc
+			// github.com/advanderveer/27067dd17/slot_test.Test2MemberSeveralRounds.func1(0xc00030c000, 0xc000306540)
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/engine_test.go:256 +0x2f
+			// created by github.com/advanderveer/27067dd17/slot_test.Test2MemberSeveralRounds
+			// 	/Users/adam/Projects/go/src/github.com/advanderveer/27067dd17/slot/engine_test.go:255 +0x33a
+			// exit status 2
+			// FAIL	github.com/advanderveer/27067dd17/slot	0.664s
+
 			return fmt.Errorf("failed to write binary data: %v", err)
 		}
 	}

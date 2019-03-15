@@ -1,6 +1,9 @@
 package slot
 
 import (
+	"fmt"
+	"io"
+	"log"
 	"math/big"
 	"sync"
 
@@ -21,16 +24,18 @@ type Voter struct {
 	pk     []byte
 	mu     sync.Mutex
 	bw     BroadcastWriter
+	logs   *log.Logger
 }
 
 // NewVoter creates a block voter
-func NewVoter(round uint64, r BlockReader, t Ticket, pk []byte) (v *Voter) {
+func NewVoter(logw io.Writer, round uint64, r BlockReader, t Ticket, pk []byte) (v *Voter) {
 	v = &Voter{
 		round:  round,
 		reader: r,
 		votes:  make(map[ID]*Block),
 		ticket: t,
 		pk:     pk,
+		logs:   log.New(logw, fmt.Sprintf("%s: ", PKString(pk)), 0),
 	}
 
 	return
@@ -75,6 +80,15 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 	id := b.Hash()
 	if len(v.votes) < 1 {
 		v.votes[id] = b
+
+		//if we can write to the broadcast network, do so right away
+		if v.bw != nil {
+			err := v.bw.Write(&Msg{Vote: v.Vote(b)})
+			if err != nil {
+				//@TODO log this but continue writing other votes
+			}
+		}
+
 		return true, 1
 	}
 
