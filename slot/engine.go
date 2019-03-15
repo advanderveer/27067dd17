@@ -172,11 +172,13 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 
 	// (2.7) if we are a voter and the block is of the same round as we're voting for
 	// for we will stop casting voting
-	if e.voter != nil {
+	if e.voter != nil && v.Block.Round >= e.voter.round {
 
 		//send any open votes onto the network and shutdown
 		votes := e.voter.Cast(e.bc)
 		e.logs.Printf("[TRAC] %s while voter was active, casted remaining %d votes before teardown", v, len(votes))
+
+		//setting this to nil
 		e.voter = nil
 	}
 

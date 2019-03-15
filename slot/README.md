@@ -43,7 +43,10 @@ https://github.com/chainpoint/whitepaper/issues/6
   -   [x] debug deadlock where one vote gets lost amongst 2 members with messages only
           flowing after blocktime has expired
   - [x] create a telemetry wrapper for broadcast for metrics
-
+  - [x] create utility function for named PKs and Blocks
+  - [x] fix deadlock for 0 minVotes scenario
+  - [ ] fix race detections
+  - [ ] fix deadlock when using race detector
 
 - [ ] figure out how to protect against grinding attack that tries out many old
       blocks as 'pref' to find a very high draw
