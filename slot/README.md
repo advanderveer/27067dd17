@@ -49,10 +49,81 @@ https://github.com/chainpoint/whitepaper/issues/6
   - [ ] assert consensus
   - [ ] fix race detections
   - [ ] fix deadlock when using race detector
+  - [ ] stopping voting in a round should not be done after a single vote, but
+        after the majority has come in
+  - [ ] build a testing method against our in-memory broadcast setup
+   - [ ] add collect method (with configurable window?)
+   - [ ] add latency simulation?
+  - [ ] setup a test with large amount of engines
+   - [ ] test ooo on large scale
+  - [ ] work on the threshold functions for: Voters, Proposer and MinVotes
+  - [ ] theorize: how to resume after deadlock?
 
+- [ ] figure out to adjust drawing difficulty
 - [ ] figure out how to protect against grinding attack that tries out many old
       blocks as 'pref' to find a very high draw
 - [ ] figure out how to protect against a halting of the system (coin death?)
+
+
+
+
+## Blocks for 2 hours and then continues?
+
+4762ad64: 12:11:02.657161 [TRAC] vote from '4762ad64' for block '80abf24d(27814)' proposed by '3a5a0c21' has caused a new tip: progress to next round
+4762ad64: 12:11:02.657176 [TRAC] draw ticket with new tip '80abf24d' as round 27815
+3a5a0c21: 12:11:02.657937 [INFO] --- drew proposer ticket! proposing block 'ddabdc72'
+3a5a0c21: 12:11:02.658008 [INFO] --- drew voter ticket! setup voter for round 27815
+3a5a0c21: 12:11:02.658018 [TRAC] blocktime is higher then zero, schedule vote casting in 100ms
+3a5a0c21: 12:11:02.658192 [TRAC] block 'ddabdc72(27815)' proposed by '3a5a0c21': start handling
+3a5a0c21: 12:11:02.658210 [TRAC] block 'ddabdc72(27815)' proposed by '3a5a0c21' was verified and of the correct round: relaying
+4762ad64: 12:11:02.658480 [INFO] --- drew proposer ticket! proposing block '8d7bd3c9'
+4762ad64: 12:11:02.658534 [INFO] --- drew voter ticket! setup voter for round 27815
+4762ad64: 12:11:02.658550 [TRAC] blocktime is higher then zero, schedule vote casting in 100ms
+4762ad64: 12:11:02.658710 [TRAC] block 'ddabdc72(27815)' proposed by '3a5a0c21': start handling
+4762ad64: 12:11:02.658757 [TRAC] block 'ddabdc72(27815)' proposed by '3a5a0c21' was verified and of the correct round: relaying
+3a5a0c21: 12:11:02.660229 [TRAC] block 'ddabdc72(27815)' proposed by '3a5a0c21' is new highest ranking block for next vote casting
+3a5a0c21: 12:11:02.660324 [TRAC] block '8d7bd3c9(27815)' proposed by '4762ad64': start handling
+3a5a0c21: 12:11:02.660345 [TRAC] block '8d7bd3c9(27815)' proposed by '4762ad64' was verified and of the correct round: relaying
+4762ad64: 12:11:02.660657 [TRAC] block 'ddabdc72(27815)' proposed by '3a5a0c21' is new highest ranking block for next vote casting
+4762ad64: 12:11:02.660760 [TRAC] block '8d7bd3c9(27815)' proposed by '4762ad64': start handling
+4762ad64: 12:11:02.660777 [TRAC] block '8d7bd3c9(27815)' proposed by '4762ad64' was verified and of the correct round: relaying
+3a5a0c21: 12:11:02.662240 [TRAC] block '8d7bd3c9(27815)' proposed by '4762ad64' is new highest ranking block for next vote casting
+4762ad64: 12:11:02.662622 [TRAC] block '8d7bd3c9(27815)' proposed by '4762ad64' is new highest ranking block for next vote casting
+4762ad64: 14:11:01.012962 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+4762ad64: 14:11:01.013232 [TRAC] vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64': start handling
+4762ad64: 14:11:01.013542 [TRAC] verified vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64': relaying
+4762ad64: 14:11:01.013706 [TRAC] tallied vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64', number of votes: 1
+4762ad64: 14:11:01.013743 [TRAC] vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64' doesn't cause enough votes (1<2): no progress
+4762ad64: 14:11:01.013926 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64': start handling
+4762ad64: 14:11:01.013947 [TRAC] verified vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64': relaying
+4762ad64: 14:11:01.014058 [TRAC] tallied vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64', number of votes: 2
+4762ad64: 14:11:01.014082 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' caused enough votes (2>1), progress!
+4762ad64: 14:11:01.027695 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' while voter was active, casted remaining 1 votes before teardown
+4762ad64: 14:11:01.027727 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' caused enough votes, appending it's block to chain!
+3a5a0c21: 14:11:01.013084 [TRAC] blocktime has passed, and we are still voter, casted 1 votes
+3a5a0c21: 14:11:01.013338 [TRAC] vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64': start handling
+3a5a0c21: 14:11:01.031201 [TRAC] verified vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64': relaying
+3a5a0c21: 14:11:01.031365 [TRAC] tallied vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64', number of votes: 1
+3a5a0c21: 14:11:01.031387 [TRAC] vote from '4762ad64' for block '8d7bd3c9(27815)' proposed by '4762ad64' doesn't cause enough votes (1<2): no progress
+3a5a0c21: 14:11:01.031517 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64': start handling
+3a5a0c21: 14:11:01.031533 [TRAC] verified vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64': relaying
+3a5a0c21: 14:11:01.031607 [TRAC] tallied vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64', number of votes: 2
+3a5a0c21: 14:11:01.031622 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' caused enough votes (2>1), progress!
+3a5a0c21: 14:11:01.034103 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' while voter was active, casted remaining 1 votes before teardown
+3a5a0c21: 14:11:01.034125 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' caused enough votes, appending it's block to chain!
+4762ad64: 14:11:01.108096 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' has caused a new tip: progress to next round
+4762ad64: 14:11:01.108119 [TRAC] draw ticket with new tip '8d7bd3c9' as round 27816
+3a5a0c21: 14:11:01.109512 [TRAC] vote from '3a5a0c21' for block '8d7bd3c9(27815)' proposed by '4762ad64' has caused a new tip: progress to next round
+3a5a0c21: 14:11:01.109529 [TRAC] draw ticket with new tip '8d7bd3c9' as round 27816
+4762ad64: 14:11:01.109547 [INFO] --- drew proposer ticket! proposing block '76eeae32'
+4762ad64: 14:11:01.109616 [INFO] --- drew voter ticket! setup voter for round 27816
+4762ad64: 14:11:01.109624 [TRAC] blocktime is higher then zero, schedule vote casting in 100ms
+4762ad64: 14:11:01.109808 [TRAC] block '76eeae32(27816)' proposed by '4762ad64': start handling
+4762ad64: 14:11:01.109874 [TRAC] block '76eeae32(27816)' proposed by '4762ad64' was verified and of the correct round: relaying
+3a5a0c21: 14:11:01.111242 [INFO] --- drew proposer ticket! proposing block 'ffddb4aa'
+3a5a0c21: 14:11:01.111296 [INFO] --- drew voter ticket! setup voter for round 27816
+
+
 
 ## Protocol
 - Each member uses its clock to decide in which round we are, each round is a 5s
