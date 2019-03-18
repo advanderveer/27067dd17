@@ -49,20 +49,37 @@ https://github.com/chainpoint/whitepaper/issues/6
   - [ ] assert consensus
   - [ ] fix race detections
   - [ ] fix deadlock when using race detector
-  - [ ] stopping voting in a round should not be done after a single vote, but
+  - [x] stopping voting in a round should not be done after a single vote, but
         after the majority has come in
   - [ ] build a testing method against our in-memory broadcast setup
    - [x] add collect method
    - [ ] add latency simulation?
   - [ ] setup a test with large amount of engines
    - [ ] test ooo on large scale
+   - [ ] reproduce minimal error with vrf sigs failing
   - [ ] work on the threshold functions for: Voters, Proposer and MinVotes
   - [ ] theorize: how to resume after deadlock?
 
-- [ ] figure out to adjust drawing difficulty
-- [ ] figure out how to protect against grinding attack that tries out many old
-      blocks as 'pref' to find a very high draw
-- [ ] figure out how to protect against a halting of the system (coin death?)
+## Limitations/Problems
+
+- [ ] Problem 1: figure out to adjust drawing difficulty: look at the average draw of leaders
+      at the last N rounds and extrapolate how many nodes would be needed to draw
+      these results:
+- [ ] Problem 2: What prevents a large portion of the voters to only vote on blocks
+      that would cause them to be proposers the next round? Not a big issue? required
+      majority of the network as they need to control both majority of voters and
+      majortiy of proposers and they can't choose the seed.
+- [ ] Problem 3: what happens if there are enough proposers to reach the threshold
+      value? This may happen if the threshold dips too low or when the network is
+      segmented?
+- [ ] Problem 4: figure out how to protect against grinding attack that tries out many old
+      blocks as 'prev' to find a very high draw: If voters take into account the full chain
+      strength they should never vote on old ref blocks.
+- [ ] Problem 5: Voter privileges are tied to the current tip a member is working, if it
+      switches it will try to vote for blocks from another tip. This will not verify correctly
+      for by members. Causing a deadlock sometimes. See exp1 for a way to reproduce this
+
+
 
 
 

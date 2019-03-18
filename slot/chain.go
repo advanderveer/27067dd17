@@ -100,15 +100,15 @@ func (c *Chain) Verify(v *Vote) (ok bool, err error) {
 
 	seed := Seed(prevb, v.Round)
 
+	//Verify the proposer proof
+	if !vrf.Verify(v.PK[:], seed, v.Ticket[:], v.Proof[:]) {
+		return false, ErrProposeProof
+	}
+
 	//Verify the voting proof
 	//@TODO this seems to fail (sometime?)
 	if !vrf.Verify(v.VotePK[:], seed, v.VoteTicket[:], v.VoteProof[:]) {
 		return false, ErrVoteProof
-	}
-
-	//Verify the proposer proof
-	if !vrf.Verify(v.PK[:], seed, v.Ticket[:], v.Proof[:]) {
-		return false, ErrProposeProof
 	}
 
 	//check if the proposer and voting ticket indeed allowed those roles
@@ -146,6 +146,7 @@ func (c *Chain) Draw(pk []byte, sk *[vrf.SecretKeySize]byte, prev ID, round uint
 	_ = c.Threshold(10, prev)
 	t.Propose = true
 	t.Vote = true
+
 	return
 }
 

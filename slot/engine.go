@@ -52,7 +52,7 @@ func NewEngine(logw io.Writer, chain *Chain, vrfpk []byte, vrfsk *[vrf.SecretKey
 		rxf:       func() { atomic.AddUint64(&e.rxMsg, 1) },
 	}
 
-	e.ooo = NewOutOfOrder(e.bc, e.chain, e.Handle)
+	e.ooo = NewOutOfOrder(e.chain, e)
 	return
 }
 
@@ -75,8 +75,7 @@ func (e *Engine) Stats() (rx, tx uint64, votes map[ID]*Block) {
 	return
 }
 
-// Run will keep reading messages from the broadcast layer and write new
-// messages to it.
+// Run will keep reading messages from the broadcast layer and handle them
 func (e *Engine) Run() (err error) {
 	for {
 		curr := &Msg{}
@@ -96,7 +95,7 @@ func (e *Engine) Run() (err error) {
 }
 
 // Handle a single message, messages may arrive in any order.
-func (e *Engine) Handle(in *Msg, bw BroadcastWriter) (err error) {
+func (e *Engine) Handle(in *Msg) (err error) {
 	switch in.Type() {
 	case MsgTypeVote: //vote message
 		return e.HandleVote(in.Vote)
@@ -126,11 +125,12 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 	// - Verify that the proposer pk didn't already propose a block @TODO what if
 	//   others use another pk then there own?
 	// @TODO somehow this fails to verify which often casuse the protocol to lock
-	// ok, err := e.chain.Verify(v)
-	// if !ok {
-	// 	e.logs.Printf("[INFO] failed to verify %s: %v\n", v, err)
-	// 	return nil
-	// }
+	ok, err := e.chain.Verify(v)
+	if !ok {
+		e.logs.Printf("[INFO] failed to verify %s: %v\n", v, err)
+		panic("foo")
+		return nil
+	}
 
 	// (2.4) at this point it is ok to relay the vote message, broadcast
 	// will take care of message deduplication.
@@ -233,6 +233,7 @@ func (e *Engine) WorkNewTip() (err error) {
 	// round and start handling proposals. And start the BlockTime timer, whenever the
 	// timer expires. Write a vote message to the broadcast.
 	if ticket.Vote {
+
 		e.voter = NewVoter(e.logs.Writer(), newround, e.chain, ticket, e.vrfPK)
 		e.logs.Printf("[INFO] --- drew voter ticket! setup voter for round %d", e.voter.round)
 
@@ -272,7 +273,8 @@ func (e *Engine) HandleProposal(b *Block) (err error) {
 	// discard right away.
 
 	// (2.2) if the block's round is equal to the round of our current tip+1 we will
-	// relay the proposal. If not, discard the proposal.
+	// relay the proposal. If not, discard the proposal. @TODO this is wrong, the voter's
+	// ticket only gives privilege for voting on block of a specific parent.
 	tipb := e.chain.Read(e.chain.Tip())
 	if tipb == nil {
 		e.logs.Printf("[ERRO] failed to read tip block, cannot progress securely: %v", err)

@@ -8,6 +8,8 @@ import (
 	"github.com/advanderveer/go-test"
 )
 
+var _ slot.MsgHandler = &slot.OutOfOrder{}
+
 type testbw struct{ msgs []*slot.Msg }
 
 func (bw *testbw) Write(m *slot.Msg) (err error) {
@@ -26,10 +28,10 @@ func TestOutOfOrderNoPrev(t *testing.T) {
 	b1 := &slot.Vote{Block: slot.NewBlock(1, slot.NilID, slot.NilTicket, slot.NilProof, slot.NilPK)}
 
 	var handles []slot.ID
-	o := slot.NewOutOfOrder(&testbw{}, make(testbr), func(msg *slot.Msg, bw slot.BroadcastWriter) error {
+	o := slot.NewOutOfOrder(make(testbr), slot.HandlerFunc(func(msg *slot.Msg) error {
 		handles = append(handles, msg.Vote.BlockHash())
 		return nil
-	})
+	}))
 
 	msg1 := &slot.Msg{Vote: b1}
 	test.Ok(t, o.Handle(msg1))
@@ -47,14 +49,14 @@ func TestOutOfOrderSimple(t *testing.T) {
 	v6 := &slot.Vote{Block: slot.NewBlock(6, v5.BlockHash(), slot.NilTicket, slot.NilProof, slot.NilPK)}
 
 	var handles []slot.ID
-	o := slot.NewOutOfOrder(&testbw{}, br, func(msg *slot.Msg, bw slot.BroadcastWriter) error {
+	o := slot.NewOutOfOrder(br, slot.HandlerFunc(func(msg *slot.Msg) error {
 		if msg.Vote.BlockHash() == v6.BlockHash() {
 			return fmt.Errorf("foo")
 		}
 
 		handles = append(handles, msg.Vote.BlockHash())
 		return nil
-	})
+	}))
 
 	msg2 := &slot.Msg{Vote: v2}
 	test.Ok(t, o.Handle(msg2)) //msg2 arrives before msg1

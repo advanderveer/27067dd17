@@ -83,7 +83,7 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 
 		//if we can write to the broadcast network, do so right away
 		if v.bw != nil {
-			err := v.bw.Write(&Msg{Vote: v.Vote(b)})
+			err := v.bw.Write(&Msg{Vote: v.vote(b)})
 			if err != nil {
 				//@TODO log this but continue writing other votes
 			}
@@ -99,6 +99,10 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 	// this check prevents this because choosing a low block gives you a very
 	// low chain strength.
 
+	// @TODO this is also something that is unique to our setup since voters might
+	// receive proposals from proposers that are on a different tip for the round
+	// so strength of the block itself doesn't say much.
+
 	curr := new(big.Rat)
 	for _, b := range v.votes {
 		curr.Set(b.Strength(1))
@@ -112,7 +116,7 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 
 		//if we can write to the broadcast network, do so right away
 		if v.bw != nil {
-			err := v.bw.Write(&Msg{Vote: v.Vote(b)})
+			err := v.bw.Write(&Msg{Vote: v.vote(b)})
 			if err != nil {
 				//@TODO log this but continue writing other votes
 			}
@@ -128,7 +132,7 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 		//new block that also has the highest score, if possible broadcast right
 		//away
 		if !ok && v.bw != nil {
-			err := v.bw.Write(&Msg{Vote: v.Vote(b)})
+			err := v.bw.Write(&Msg{Vote: v.vote(b)})
 			if err != nil {
 				//@TODO log this but continue writing other votes
 			}
@@ -141,7 +145,7 @@ func (v *Voter) Propose(b *Block) (ok bool, nh int) {
 }
 
 // Vote on the provide block and return the vote that carries it
-func (v *Voter) Vote(b *Block) (bv *Vote) {
+func (v *Voter) vote(b *Block) (bv *Vote) {
 	bv = &Vote{Block: b}
 
 	num := copy(bv.VoteTicket[:], v.ticket.Data)
@@ -169,7 +173,7 @@ func (v *Voter) Vote(b *Block) (bv *Vote) {
 func (v *Voter) Cast(bw BroadcastWriter) (votes []*Vote) {
 	v.mu.Lock()
 	for _, b := range v.votes {
-		votes = append(votes, v.Vote(b))
+		votes = append(votes, v.vote(b))
 	}
 
 	v.bw = bw

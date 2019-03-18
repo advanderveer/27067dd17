@@ -7,8 +7,7 @@ import "sync"
 // if this is the case it will not handle it right away but wait for it to get
 // handled first.
 type OutOfOrder struct {
-	handle  func(in *Msg, bw BroadcastWriter) (err error)
-	bw      BroadcastWriter
+	handler MsgHandler
 	br      BlockReader
 	orphans map[ID][]*Msg
 	mu      sync.Mutex
@@ -22,10 +21,9 @@ type OutOfOrder struct {
 // NewOutOfOrder creates a new out of order handler. Upon deferred handling it
 // will use the provided BroadcastWriter to allow the handler to write output
 // to the network
-func NewOutOfOrder(bw BroadcastWriter, br BlockReader, h func(in *Msg, bw BroadcastWriter) (err error)) *OutOfOrder {
+func NewOutOfOrder(br BlockReader, h MsgHandler) *OutOfOrder {
 	return &OutOfOrder{
-		handle:  h,
-		bw:      bw,
+		handler: h,
 		br:      br,
 		orphans: make(map[ID][]*Msg),
 	}
@@ -45,7 +43,7 @@ func (o *OutOfOrder) Resolve(b *Block) (n int, err error) {
 
 	var errs []error
 	for _, msg := range orphans {
-		err = o.handle(msg, o.bw)
+		err = o.handler.Handle(msg)
 		n++
 		if err != nil {
 			errs = append(errs, err)
@@ -73,12 +71,12 @@ func (o *OutOfOrder) Handle(msg *Msg) (err error) {
 	case MsgTypeVote:
 		prev = msg.Vote.Prev
 	default:
-		return o.handle(msg, o.bw)
+		return o.handler.Handle(msg)
 	}
 
 	//no dependency, handle right away
 	if prev == NilID {
-		return o.handle(msg, o.bw)
+		return o.handler.Handle(msg)
 	}
 
 	prevb := o.br.Read(prev)
@@ -94,5 +92,5 @@ func (o *OutOfOrder) Handle(msg *Msg) (err error) {
 		return nil
 	}
 
-	return o.handle(msg, o.bw)
+	return o.handler.Handle(msg)
 }

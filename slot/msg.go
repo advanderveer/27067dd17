@@ -10,6 +10,19 @@ import (
 	"sort"
 )
 
+//MsgHandler handles messages
+type MsgHandler interface {
+	Handle(in *Msg) (err error)
+}
+
+//HandlerFunc can be cast to to implement msg Handler
+type HandlerFunc func(in *Msg) (err error)
+
+//Handle implements the mssage handling interface
+func (hf HandlerFunc) Handle(in *Msg) (err error) {
+	return hf(in)
+}
+
 //MsgType tags messages
 type MsgType uint
 

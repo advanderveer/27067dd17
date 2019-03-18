@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"io"
+	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -10,39 +10,6 @@ import (
 	"github.com/advanderveer/27067dd17/slot"
 	"github.com/advanderveer/27067dd17/vrf"
 )
-
-//collect all messages as a new endpoint on the broadcast network, done will close
-//the endpoint and return a channel that can be read to get all messages it saw
-func collect(netw *slot.MemNetwork) (done func() chan []*slot.Msg) {
-	ep := netw.Endpoint()
-	donec := make(chan []*slot.Msg)
-	go func() {
-		msgs := []*slot.Msg{}
-		for {
-			msg := &slot.Msg{}
-			err := ep.Read(msg)
-			if err == io.EOF {
-				donec <- msgs
-				return
-			}
-
-			if err != nil {
-				panic(err)
-			}
-
-			msgs = append(msgs, msg)
-		}
-	}()
-
-	return func() chan []*slot.Msg {
-		err := ep.Close()
-		if err != nil {
-			panic(err)
-		}
-
-		return donec
-	}
-}
 
 func main() {
 	sigCh := make(chan os.Signal)
@@ -58,11 +25,12 @@ func main() {
 	rnd2[0] = 0x02
 	pk1, sk1, _ := vrf.GenerateKey(bytes.NewReader(rnd1)) //ana
 	pk2, sk2, _ := vrf.GenerateKey(bytes.NewReader(rnd2)) //bob
+	fmt.Printf("invalid vote proof pk1: %.6x pk2: %.6x\n", pk1, pk2)
 
 	//member 1
 	ep1 := netw.Endpoint()
 	c1 := slot.NewChain()
-	e1 := slot.NewEngine(os.Stderr, c1, pk1, sk1, ep1, time.Millisecond*100, 1)
+	e1 := slot.NewEngine(os.Stdout, c1, pk1, sk1, ep1, time.Microsecond, 0)
 	err := e1.WorkNewTip()
 	if err != nil {
 		panic(err)
@@ -71,7 +39,7 @@ func main() {
 	//member 2
 	ep2 := netw.Endpoint()
 	c2 := slot.NewChain()
-	e2 := slot.NewEngine(os.Stderr, c2, pk2, sk2, ep2, time.Millisecond*100, 1)
+	e2 := slot.NewEngine(os.Stdout, c2, pk2, sk2, ep2, time.Microsecond, 0)
 	err = e2.WorkNewTip()
 	if err != nil {
 		panic(err)
@@ -87,12 +55,12 @@ func main() {
 		}
 	}()
 
-	go func() {
-		err := e2.Run()
-		if err != nil {
-			panic(err)
-		}
-	}()
+	// go func() {
+	// 	err := e2.Run()
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }()
 
 	// @TODO will eventually deadlock, sometimes it takes 10k rounds but it inevitable
 	// how do we fix that
