@@ -52,6 +52,7 @@ type errbc struct {
 
 func (e errbc) Read(m *slot.Msg) (err error)  { return e.E }
 func (e errbc) Write(m *slot.Msg) (err error) { return e.E }
+func (e errbc) Close() error                  { return nil }
 
 func TestReadError(t *testing.T) {
 	pk1, sk1, err := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
@@ -88,32 +89,6 @@ func TestHandleError(t *testing.T) {
 	test.Equals(t, "failed to handle rx message on n=1 (type: 0): read unkown message from broadcast", msge.Error())
 }
 
-//collect all messages as a new endpoint on the broadcast network, done will close
-//the endpoint and return a channel that can be read to get all messages it saw
-func collect(t testing.TB, netw *slot.MemNetwork) (done func() chan []*slot.Msg) {
-	ep := netw.Endpoint()
-	donec := make(chan []*slot.Msg)
-	go func() {
-		msgs := []*slot.Msg{}
-		for {
-			msg := &slot.Msg{}
-			err := ep.Read(msg)
-			if err == io.EOF {
-				donec <- msgs
-				return
-			}
-
-			test.Ok(t, err)
-			msgs = append(msgs, msg)
-		}
-	}()
-
-	return func() chan []*slot.Msg {
-		test.Ok(t, ep.Close())
-		return donec
-	}
-}
-
 func TestMessageHandlingStepByStep(t *testing.T) {
 	pk1, sk1, _ := vrf.GenerateKey(bytes.NewReader(make([]byte, 33)))
 	netw := slot.NewMemNetwork()
@@ -123,7 +98,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 	e1 := slot.NewEngine(ioutil.Discard, c1, pk1, sk1, ep1, bt, 1)
 
 	t.Run("propose a block build up from genesis", func(t *testing.T) {
-		coll1 := collect(t, netw)
+		coll1 := slot.Collect(netw.Endpoint())
 
 		//sending 10 messages schouldn't change anything, as they get de-duplicated
 		//and no voter is there to turn the proposal into a vote
@@ -145,7 +120,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 	})
 
 	t.Run("handle proposal as potential votes", func(t *testing.T) {
-		coll1 := collect(t, netw)
+		coll1 := slot.Collect(netw.Endpoint())
 
 		p1 := &slot.Msg{}
 		err := ep1.Read(p1)
@@ -168,7 +143,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 	})
 
 	t.Run("test proposals coming in and stackin up, released due to time out", func(t *testing.T) {
-		coll1 := collect(t, netw)
+		coll1 := slot.Collect(netw.Endpoint())
 
 		//voter should have written his votes to the network after twice the blocktime
 		time.Sleep(bt * 2)
@@ -180,7 +155,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 
 	var voter *slot.Voter
 	t.Run("new proposal that comes (and is higher) turn into a vote right away", func(t *testing.T) {
-		coll1 := collect(t, netw)
+		coll1 := slot.Collect(netw.Endpoint())
 
 		//imagine another chain with another pk
 		rb := make([]byte, 32)
@@ -203,7 +178,7 @@ func TestMessageHandlingStepByStep(t *testing.T) {
 	})
 
 	t.Run("close round for causing votes to be broadcasted to the network", func(t *testing.T) {
-		coll1 := collect(t, netw)
+		coll1 := slot.Collect(netw.Endpoint())
 
 		//read the vote that is there for us
 		v1 := &slot.Msg{}
@@ -321,7 +296,7 @@ func Test2MemberDeadlockAfterBlockTime(t *testing.T) {
 
 	//setup network
 	netw := slot.NewMemNetwork()
-	coll := collect(t, netw)
+	coll := slot.Collect(netw.Endpoint())
 	logs := bytes.NewBuffer(nil)
 
 	//prep debug names and deterministic block input
@@ -575,7 +550,7 @@ func Test2MemberDeadlockAfterBlockTime(t *testing.T) {
 
 // func Test2MemberDeadlock0minSize(t *testing.T) {
 // 	netw := slot.NewMemNetwork()
-// 	coll := collect(t, netw)
+// 	coll := slot.Collect(netw.Endpoint())
 //
 // 	//prep debug names and deterministic block input
 // 	rnd1 := make([]byte, 32)
@@ -617,6 +592,4 @@ func Test2MemberDeadlockAfterBlockTime(t *testing.T) {
 // 	test.Assert(t, len(msgs) > 10, "should do a decent amount of messages, got: %d", len(msgs))
 //
 // 	test.Equals(t, c1.Tip(), c2.Tip())
-// 	tipb := c1.Read(c1.Tip())
-// 	fmt.Println("ROUND", tipb.Round)
 // }

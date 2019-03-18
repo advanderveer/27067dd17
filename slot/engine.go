@@ -47,9 +47,9 @@ func NewEngine(logw io.Writer, chain *Chain, vrfpk []byte, vrfsk *[vrf.SecretKey
 
 	//keep transmission metrics by wrapping
 	e.bc = &metrics{
-		bc:  bc,
-		txf: func() { atomic.AddUint64(&e.txMsg, 1) },
-		rxf: func() { atomic.AddUint64(&e.rxMsg, 1) },
+		Broadcast: bc,
+		txf:       func() { atomic.AddUint64(&e.txMsg, 1) },
+		rxf:       func() { atomic.AddUint64(&e.rxMsg, 1) },
 	}
 
 	e.ooo = NewOutOfOrder(e.bc, e.chain, e.Handle)
@@ -318,13 +318,13 @@ func (e *Engine) HandleProposal(b *Block) (err error) {
 
 //metrics wraps a broadcast and calls rxf for every read and txf for every write
 type metrics struct {
-	bc  Broadcast
+	Broadcast
 	txf func()
 	rxf func()
 }
 
 func (m *metrics) Write(msg *Msg) (err error) {
-	err = m.bc.Write(msg)
+	err = m.Broadcast.Write(msg)
 	if err == nil {
 		m.txf()
 	}
@@ -333,7 +333,7 @@ func (m *metrics) Write(msg *Msg) (err error) {
 }
 
 func (m *metrics) Read(msg *Msg) (err error) {
-	err = m.bc.Read(msg)
+	err = m.Broadcast.Read(msg)
 	if err == nil {
 		m.rxf()
 	}

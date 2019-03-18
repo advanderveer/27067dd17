@@ -25,6 +25,41 @@ type BroadcastWriter interface {
 // BroadcastReader is the reading part of a broadcast network.
 type BroadcastReader interface {
 	Read(m *Msg) (err error)
+	Close() (err error)
+}
+
+// Collect will read from a broad network until the returning function is called.
+// This then returns a array of all the messages that were written to the broadcast
+// network
+func Collect(r BroadcastReader) func() chan []*Msg {
+	donec := make(chan []*Msg)
+	msgs := []*Msg{}
+
+	go func() {
+		for {
+			msg := &Msg{}
+			err := r.Read(msg)
+			if err == io.EOF {
+				donec <- msgs
+				return
+			}
+
+			if err != nil {
+				panic("collect: failed to read: " + err.Error())
+			}
+
+			msgs = append(msgs, msg)
+		}
+	}()
+
+	return func() chan []*Msg {
+		err := r.Close()
+		if err != nil {
+			panic("collect: failed to close: " + err.Error())
+		}
+
+		return donec
+	}
 }
 
 // MemNetwork is an in memory broadcast network

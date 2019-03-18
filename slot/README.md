@@ -52,7 +52,7 @@ https://github.com/chainpoint/whitepaper/issues/6
   - [ ] stopping voting in a round should not be done after a single vote, but
         after the majority has come in
   - [ ] build a testing method against our in-memory broadcast setup
-   - [ ] add collect method (with configurable window?)
+   - [x] add collect method
    - [ ] add latency simulation?
   - [ ] setup a test with large amount of engines
    - [ ] test ooo on large scale

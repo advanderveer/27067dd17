@@ -81,3 +81,23 @@ func TestWrite2Many(t *testing.T) {
 	test.Ok(t, ep3.Read(msg2))
 	test.Equals(t, uint64(1), msg2.Proposal.Round)
 }
+
+func TestCollect(t *testing.T) {
+	netw := slot.NewMemNetwork()
+	ep1 := netw.Endpoint()
+	ep2 := netw.Endpoint()
+	coll1 := slot.Collect(ep2)
+
+	doneCh := make(chan struct{})
+	go func() {
+		for i := uint64(0); i < 100; i++ {
+			test.Ok(t, ep1.Write(&slot.Msg{Proposal: &slot.Block{Round: i}}))
+		}
+
+		doneCh <- struct{}{}
+	}()
+
+	<-doneCh
+	msgs := <-coll1()
+	test.Equals(t, 100, len(msgs))
+}
