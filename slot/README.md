@@ -77,7 +77,8 @@ https://github.com/chainpoint/whitepaper/issues/6
       strength they should never vote on old ref blocks.
 - [ ] Problem 5: Voter privileges are tied to the current tip a member is working, if it
       switches it will try to vote for blocks from another tip. This will not verify correctly
-      for by members. Causing a deadlock sometimes. See exp1 for a way to reproduce this
+      for by members. Causing a deadlock sometimes. See exp1 for a way to reproduce this.
+      Possible solution: draw a ticket for every tip. Propose and vote for each?
 
 
 
