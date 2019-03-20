@@ -59,6 +59,11 @@ https://github.com/chainpoint/whitepaper/issues/6
    - [ ] reproduce minimal error with vrf sigs failing
   - [ ] work on the threshold functions for: Voters, Proposer and MinVotes
   - [ ] theorize: how to resume after deadlock?
+  - [ ] fix on split tip voter problem:
+    - [x] start with a fixed seed per round, role shouldn't change if a new tip
+          comes along at the same height. Still locks up the protocol sometimes
+    - [ ] can we find a common seed even with multiple tips? Biggest common subgraph of strongest tips?
+
 
 ## Limitations/Problems
 
@@ -68,7 +73,7 @@ https://github.com/chainpoint/whitepaper/issues/6
 - [ ] Problem 2: What prevents a large portion of the voters to only vote on blocks
       that would cause them to be proposers the next round? Not a big issue? required
       majority of the network as they need to control both majority of voters and
-      majortiy of proposers and they can't choose the seed.
+      majority of proposers and they can't choose the seed anyway.
 - [ ] Problem 3: what happens if there are enough proposers to reach the threshold
       value? This may happen if the threshold dips too low or when the network is
       segmented?
@@ -79,6 +84,56 @@ https://github.com/chainpoint/whitepaper/issues/6
       switches it will try to vote for blocks from another tip. This will not verify correctly
       for by members. Causing a deadlock sometimes. See exp1 for a way to reproduce this.
       Possible solution: draw a ticket for every tip. Propose and vote for each?
+- [ ] Problem 6: Do voters have upfront knowledge of which block will be highest?
+- [ ] Problem 7: Why would proposers wait for all votes before proposing? Should include
+      some proof of seeing votes from N notaries
+
+
+## Idea: Time-lock puzzle proof
+- https://crypto.stackexchange.com/questions/9327/parallel-resistant-proof-of-work-scheme
+- http://www.hashcash.org/papers/time-lock.pdf
+
+## Idea: Proof of seen other proposals
+The first member that can show that its ticket is the highest with min N and max
+M other tickets (all of which are verified to be valid). Gets to start the new
+round, multiple may achieve this at the same time. But the network filters lower
+ranking blocks and if two blocks survive each member will continue on the longest
+chain. The higher the ticket, the easier this will be. The lower the ticket the
+harder: but everyone is witholding its ticket? But if 2/3 is honest, under a certain
+vrf threshold you are a loser, you
+
+Lets consider a two role system. On each new tip (that is stronger) each member
+rolls a vrf dice. If it is below a certain number they get to be the supplier
+if it is above a certain number they can be gatherers. Suppliers release their
+roll right away, dissemate throughout the network. The gatheres are racing to
+combine a N-M amount of votes from the suppliers and dissemate that. When this
+happens everyone starts another round.  
+
+## Idea: Public keys that are harder to find then the vrf itself
+
+## Idea: Voter + Ballot for every tip on the chain
+Each member is allowed to  draw a ticket for every tip. An draw himself a
+role for that tip. But new tips require a majority vote from voters. Voters
+close down if a tip comes a long at a height that is higher then the voters height.  
+
+vrf is always of n blocks down the common sub-graph of all tips n rounds in the past?
+doesn't matter what tip? or the highest round with just one block (at least 2 rounds in the past)
+
+## Idea: just vote counting, wait for enough proof  
+Each block contains a draw and the draws of min N, max M draws of a tip at the prev
+height. For each tip can gather enough proof and then draw an high enough ticket can
+be proposed. The draw must be past a certain threshold, this threshold is adjusted
+by looking at the average draw value of the last X rounds. If the prev tip is the
+genesis block, no other proof is necessary: there is no selection/ranking?
+
+
+Every member draws a ticket based on a deterministic merge of all block proposals
+of the previous round. (ripple like), how to merge?
+
+
+## Every proposer
+
+
 
 
 

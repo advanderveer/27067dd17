@@ -25,10 +25,11 @@ type Voter struct {
 	mu     sync.Mutex
 	bw     BroadcastWriter
 	logs   *log.Logger
+	gen    *Block
 }
 
 // NewVoter creates a block voter
-func NewVoter(logw io.Writer, round uint64, r BlockReader, t Ticket, pk []byte) (v *Voter) {
+func NewVoter(logw io.Writer, round uint64, r BlockReader, t Ticket, pk []byte, gen *Block) (v *Voter) {
 	v = &Voter{
 		round:  round,
 		reader: r,
@@ -36,6 +37,7 @@ func NewVoter(logw io.Writer, round uint64, r BlockReader, t Ticket, pk []byte) 
 		ticket: t,
 		pk:     pk,
 		logs:   log.New(logw, fmt.Sprintf("%s: ", PKString(pk)), 0),
+		gen:    gen,
 	}
 
 	return
@@ -63,7 +65,9 @@ func (v *Voter) Verify(b *Block) (ok bool, err error) {
 		return false, ErrPrevNotExist
 	}
 
-	if !vrf.Verify(b.PK[:], Seed(prevb, b.Round), b.Ticket[:], b.Proof[:]) {
+	seed := Seed(v.gen, b.Round)
+
+	if !vrf.Verify(b.PK[:], seed, b.Ticket[:], b.Proof[:]) {
 		return false, ErrProposeProof
 	}
 

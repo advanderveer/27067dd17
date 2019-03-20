@@ -1,6 +1,7 @@
 package slot
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 
@@ -24,6 +25,7 @@ type Chain struct {
 	rounds map[uint64]map[ID]struct{} //maps blocks to rounds
 	ranks  map[ID]int                 //stores the rank of each block in its respective round
 	votes  map[ID]map[[TicketSize]byte]struct{}
+	gen    *Block
 
 	mu sync.RWMutex
 }
@@ -44,6 +46,7 @@ func NewChain() (c *Chain) {
 	c.blocks[c.tip] = genb
 	c.rounds[0] = map[ID]struct{}{c.tip: struct{}{}}
 	c.ranks[c.tip] = 1
+	c.gen = genb
 
 	return
 }
@@ -95,10 +98,15 @@ func (c *Chain) Verify(v *Vote) (ok bool, err error) {
 		return false, ErrPrevNotExist
 	}
 
+	rank := c.rank(v.Prev)
+	if rank != 1 {
+		return false, fmt.Errorf("prev not rank 1")
+	}
+
 	//@TODO check if it a vote block at all: i.e. are all the fields filled in
 	//@TODO check if all the block fields are filled in (non-nil)
 
-	seed := Seed(prevb, v.Round)
+	seed := Seed(c.gen, v.Round)
 
 	//Verify the proposer proof
 	if !vrf.Verify(v.PK[:], seed, v.Ticket[:], v.Proof[:]) {
@@ -136,7 +144,7 @@ func (c *Chain) Draw(pk []byte, sk *[vrf.SecretKeySize]byte, prev ID, round uint
 	//also? Wouldn't this be the case with having the prev hash as well?
 
 	//calculate the ticket's seed
-	seed := Seed(prevb, round)
+	seed := Seed(c.gen, round)
 
 	//draw a new ticket, use previoub block ticket as seed.
 	//@TODO we could potentially gather randomness from any number of past blocks
@@ -198,7 +206,7 @@ func (c *Chain) strength(id ID) (s *big.Rat, err error) {
 
 // Append a new block unconditionally, in normal operation the block should
 // first be verified for syntax and come with a vote.
-func (c *Chain) Append(b *Block) (id ID, newtip bool) {
+func (c *Chain) Append(b *Block) (id ID, newheight, newtip bool) {
 	id = b.Hash()
 
 	//determine prev strength
@@ -242,6 +250,12 @@ func (c *Chain) Append(b *Block) (id ID, newtip bool) {
 	tipStrength, err := c.strength(c.tip)
 	if err != nil {
 		panic("failed to determine tip strength: " + err.Error())
+	}
+
+	//check if we moved to a higher height
+	lastt := c.read(c.tip)
+	if b.Round > lastt.Round {
+		newheight = true
 	}
 
 	if tipStrength.Cmp(prevStrength) < 0 {

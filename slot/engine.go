@@ -1,6 +1,7 @@
 package slot
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -19,8 +20,9 @@ type Engine struct {
 	rxMsg uint64                   //received message count
 	txMsg uint64                   //transmit message count
 
-	minVotes  uint64        //minimum nr votes requires before a block is appended
-	blockTime time.Duration //the time after which voters will cast their votes to the network
+	minVotes   uint64        //minimum nr votes requires before a block is appended
+	blockTime  time.Duration //the time after which voters will cast their votes to the network
+	lastTicket Ticket
 
 	bc    Broadcast   //message broadcast  rx/tx
 	chain *Chain      //holds state for majority voted blocks
@@ -128,7 +130,6 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 	ok, err := e.chain.Verify(v)
 	if !ok {
 		e.logs.Printf("[INFO] failed to verify %s: %v\n", v, err)
-		panic("foo")
 		return nil
 	}
 
@@ -174,7 +175,7 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 
 	//append the block in the vote and see if it changes the tip
 	e.logs.Printf("[TRAC] %s caused enough votes, appending it's block to chain!", v)
-	_, newtip := e.chain.Append(v.Block)
+	_, newh, newt := e.chain.Append(v.Block)
 
 	//resolve out-of-order blocks, messages can now be handled
 	nresv, err := e.ooo.Resolve(v.Block)
@@ -186,12 +187,15 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 		e.logs.Printf("[TRAC] %s caused resolving of %d messages", v, nresv)
 	}
 
-	if !newtip {
-		e.logs.Printf("[TRAC] %s has caused no new tip: do not progress to next round", v)
+	//we switch when the new tip represents a higher height, @TODO but what if
+	//a later tips comes a long that has a higher strength?
+	_ = newh
+	if !newt {
+		e.logs.Printf("[TRAC] %s has caused no new tip height: do not progress to next round", v)
 		return nil //tip didn't change nothing left to do
 	}
 
-	e.logs.Printf("[TRAC] %s has caused a new tip: progress to next round", v)
+	e.logs.Printf("[TRAC] %s has caused a new tip height: progress to next round", v)
 	return e.WorkNewTip() //enter the next round
 }
 
@@ -229,12 +233,21 @@ func (e *Engine) WorkNewTip() (err error) {
 		}
 	}
 
+	//if our ticket is the same as the last ticket do not change our voter status
+	//but do allow proposal of our newly seen tip (seen above).
+	if bytes.Equal(e.lastTicket.Data, ticket.Data) {
+		e.logs.Printf("[TRAC] new ticket was the same as last ticket at round %d", newround)
+		return nil
+	}
+
+	e.lastTicket = ticket
+
 	// (2.10) if the ticket grants us the right to vote, create a voter for the new
 	// round and start handling proposals. And start the BlockTime timer, whenever the
 	// timer expires. Write a vote message to the broadcast.
 	if ticket.Vote {
 
-		e.voter = NewVoter(e.logs.Writer(), newround, e.chain, ticket, e.vrfPK)
+		e.voter = NewVoter(e.logs.Writer(), newround, e.chain, ticket, e.vrfPK, e.chain.gen)
 		e.logs.Printf("[INFO] --- drew voter ticket! setup voter for round %d", e.voter.round)
 
 		//schedule the voter to cast its votes after a configurable amount of time
