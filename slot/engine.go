@@ -126,7 +126,6 @@ func (e *Engine) HandleVote(v *Vote) (err error) {
 	// - Verify if it a vote at all
 	// - Verify that the proposer pk didn't already propose a block @TODO what if
 	//   others use another pk then there own?
-	// @TODO somehow this fails to verify which often casuse the protocol to lock
 	ok, err := e.chain.Verify(v)
 	if !ok {
 		e.logs.Printf("[INFO] failed to verify %s: %v\n", v, err)
