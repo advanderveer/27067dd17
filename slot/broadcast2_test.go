@@ -15,9 +15,9 @@ func TestBroadcast2(t *testing.T) {
 	coll, done := slot.Collect2(1)
 	bc1.Relay(bc2, bc3, coll) //bc1 will write to bc2 and bc3
 
-	tr1 := newTestRound(0x01)
+	inj1 := newInjector(0x01)
 
-	msg1 := tr1.propose(slot.NilID, 1, []byte{0x01})
+	msg1 := inj1.propose(slot.NilID, 1, []byte{0x01})
 	test.Ok(t, bc1.Write(1, msg1))
 
 	msg2 := &slot.Msg2{}
@@ -40,6 +40,6 @@ func TestBroadcast2(t *testing.T) {
 	test.Equals(t, io.EOF, err)
 
 	//Writing should still be possible
-	msg4 := tr1.propose(slot.NilID, 1, []byte{0x01})
+	msg4 := inj1.propose(slot.NilID, 1, []byte{0x01})
 	test.Ok(t, bc1.Write(1, msg4)) //should not panic
 }

@@ -64,6 +64,19 @@ https://github.com/chainpoint/whitepaper/issues/6
           comes along at the same height. Still locks up the protocol sometimes
     - [ ] can we find a common seed even with multiple tips? Biggest common subgraph of strongest tips?
 
+### CODING TODO
+- [x] finish wireframe for ballot
+- [x] finish e2e happy path test
+- [x] finish round based refactor
+- [ ] test block validate
+- [ ] test proposal validate
+- [ ] test vote validate
+- [ ] test ballot struct
+- [ ] test voter struct
+
+
+### RESEARCH TODO:
+- [ ] how unique are the vrf public keys, 32 bytes is pretty good right?
 
 ## Limitations/Problems
 

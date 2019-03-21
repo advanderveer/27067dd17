@@ -4,16 +4,28 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/advanderveer/27067dd17/vrf"
 )
 
 // Block2 is the final structure that the protocol reached consensus over
 type Block2 struct {
 	Prev ID
 	Data []byte
+}
+
+//GenesisBlock returns the protocol constant first block
+func GenesisBlock() *Block2 {
+	return &Block2{
+		Prev: NilID,
+		Data: []byte("vi veri veniversum vivus vici"),
+	}
 }
 
 //Hash the block
@@ -24,12 +36,13 @@ func (b *Block2) Hash() ID {
 	}, nil)))
 }
 
-//GenesisBlock returns the protocol constant first block
-func GenesisBlock() *Block2 {
-	return &Block2{
-		Prev: NilID,
-		Data: []byte("vi veri veniversum vivus vici"),
+//Validate the syntax
+func (b *Block2) Validate() (ok bool, err error) {
+	if b.Prev == NilID { //no prev block in proposal
+		return false, fmt.Errorf("empty prev")
 	}
+
+	return true, nil
 }
 
 // Proposal2 describes a block proposal from the network
@@ -41,6 +54,27 @@ type Proposal2 struct {
 	Block *Block2
 }
 
+//Validate the syntax of a proposal
+func (p *Proposal2) Validate() (ok bool, err error) {
+	if len(p.Token) != TicketSize {
+		return false, fmt.Errorf("wrong length for token")
+	}
+
+	if len(p.PK) != PKSize {
+		return false, fmt.Errorf("wrong length for token proof pk")
+	}
+
+	if len(p.Proof) != ProofSize {
+		return false, fmt.Errorf("wrong length for token proof")
+	}
+
+	if p.Block == nil {
+		return false, fmt.Errorf("no block in proposal")
+	}
+
+	return p.Block.Validate()
+}
+
 // Vote2 describes a vote for a block from the network
 type Vote2 struct {
 	Token []byte
@@ -50,18 +84,68 @@ type Vote2 struct {
 	Proposal *Proposal2
 }
 
+//Validate the syntax
+func (v *Vote2) Validate() (ok bool, err error) {
+	if len(v.Token) != TicketSize {
+		return false, fmt.Errorf("wrong length for token")
+	}
+
+	if len(v.PK) != PKSize {
+		return false, fmt.Errorf("wrong length for token proof pk")
+	}
+
+	if len(v.Proof) != ProofSize {
+		return false, fmt.Errorf("wrong length for token proof")
+	}
+
+	if v.Proposal == nil {
+		return false, fmt.Errorf("no proposal in vote")
+	}
+
+	return v.Proposal.Validate()
+}
+
 // Msg2 is our new message structure
 type Msg2 struct {
 	Proposal *Proposal2
 	Vote     *Vote2
 }
 
+//ProposerFilter makes it easier to check if the proposal was proposed by a
+//proposer that already sent another proposal for a block
+type ProposerFilter map[[PKSize]byte]map[[TicketSize]byte]struct{}
+
+//NewProposerFilter creates an empty proposer filter
+func NewProposerFilter() ProposerFilter {
+	return make(ProposerFilter)
+}
+
+// Add will add the proposal to the filter, it returns how often a proposer has
+// then proposed during the round
+func (pf ProposerFilter) Add(pkb []byte, token []byte) (n int) {
+	var pk [PKSize]byte
+	copy(pk[:], pkb)
+
+	pids, ok := pf[pk]
+	if !ok {
+		pids = make(map[[TicketSize]byte]struct{})
+	}
+
+	var t [TicketSize]byte
+	copy(t[:], token)
+
+	pids[t] = struct{}{}
+	pf[pk] = pids
+	return len(pids)
+}
+
 // Voter2 manages votes for a certain round
 type Voter2 struct {
+	tip        ID
 	bw         BroadcastWriter2
 	round      uint64
 	mu         sync.Mutex
-	proposers  map[[PKSize]byte]struct{}
+	pf         ProposerFilter
 	top        *big.Int
 	candidates []*Proposal2
 	timer      *time.Timer
@@ -72,13 +156,14 @@ type Voter2 struct {
 // during a round and broadcasts the highest ranking ones as votes after a configurable
 // timeout. New high-ranking proposals that arrive after this and are broadcasted
 // as votes right away.
-func NewVoter2(bw BroadcastWriter2, round uint64, bt time.Duration) (v *Voter2) {
+func NewVoter2(bw BroadcastWriter2, round uint64, tip ID, bt time.Duration) (v *Voter2) {
 	v = &Voter2{
-		bw:        bw,
-		round:     round,
-		proposers: make(map[[PKSize]byte]struct{}),
-		top:       big.NewInt(0),
-		timer:     time.NewTimer(bt),
+		tip:   tip,
+		bw:    bw,
+		round: round,
+		pf:    NewProposerFilter(),
+		top:   big.NewInt(0),
+		timer: time.NewTimer(bt),
 	}
 
 	go func() {
@@ -113,31 +198,18 @@ func (v *Voter2) cast() (err error) {
 
 // Handle proposals for the round
 func (v *Voter2) Handle(p *Proposal2) (err error) {
-	if len(p.Token) != TicketSize {
-		panic("wrong length for token in proposal")
-	}
 
-	if len(p.PK) != PKSize { //wrong length rank proof pk in proposal
-		panic("wrong length token proof pk in proposal")
-	}
-
-	if len(p.Proof) != ProofSize { //wrong length rank proof in proposal
-		panic("wrong length token proof pk in proposal")
-	}
-
-	if p.Block == nil { //no block in proposal
-		panic("no block in proposal")
-	}
-
-	if p.Block.Prev == NilID { //no prev block in proposal
-		panic("no prev block in propoal")
+	//validate syntax
+	ok, err := p.Validate()
+	if !ok {
+		panic("failed to validate proposal: " + err.Error())
 	}
 
 	//@TODO verify VRF token with pk and proof
 	//@TODO verify that the token provides the right to propose
 
 	//@TODO if we add randomness to a ticket draw we need to order the blocks
-	//we receive here on chain strength. Else proposers can grind blocks with
+	//we receive here on chain strength. else proposers can grind blocks with
 	//the different randomness input (old blocks) to find high ranks for their
 	//blocks. Even though we allow only one proposal per round this might still
 	//be harmfull. Alternatively we might require a small proof of work for each
@@ -147,12 +219,17 @@ func (v *Voter2) Handle(p *Proposal2) (err error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	//enforce only one proposal per user per round
-	//@TODO how unique are vrf public keys, 32 bytes is pretty good right?
-	var pk [PKSize]byte
-	copy(pk[:], p.PK)
-	_, ok := v.proposers[pk]
-	if ok { //already proposed
+	// if the proposed block is building on a tip that we don't consider to be
+	// winning in the last round we do not vote on the proposal.
+	if p.Block.Prev != v.tip {
+		panic("vote's proposed block is build on a tip that we don't consider to be winning")
+	}
+
+	//enforce only one proposal per user per round. This is not triggered if
+	//we receive the same block from the same proposal. This is triggered when
+	//the proposal comes with a different trigger
+	npro := v.pf.Add(p.PK, p.Token)
+	if npro > 1 { //already proposed at least onces
 		panic("proposer already proposed a block for this round")
 	}
 
@@ -161,6 +238,7 @@ func (v *Voter2) Handle(p *Proposal2) (err error) {
 	rank := big.NewInt(0).SetBytes(p.Token)
 	if rank.Cmp(v.top) > 0 {
 		v.candidates = []*Proposal2{p} //reset, with new highest proposal
+		v.top = rank
 	} else if rank.Cmp(v.top) == 0 {
 		v.candidates = append(v.candidates, p) //augment with also highest proposal
 	} else {
@@ -186,14 +264,29 @@ func (v *Voter2) Handle(p *Proposal2) (err error) {
 
 // Ballot handles votes for a certain round
 type Ballot struct {
+	tip    ID
 	blocks chan *Block2
 	bw     BroadcastWriter2
 	round  uint64
+	votes  map[ID]map[[PKSize]byte]struct{}
+	pf     ProposerFilter
+	minv   uint64
+	mu     sync.RWMutex
+	top    *big.Int
 }
 
 // NewBallot creates the round's vote handler
-func NewBallot(bw BroadcastWriter2, round uint64) (b *Ballot) {
-	b = &Ballot{bw: bw, blocks: make(chan *Block2), round: round}
+func NewBallot(bw BroadcastWriter2, round uint64, tip ID, minv uint64) (b *Ballot) {
+	b = &Ballot{
+		tip:    tip,
+		bw:     bw,
+		blocks: make(chan *Block2),
+		round:  round,
+		votes:  make(map[ID]map[[TicketSize]byte]struct{}),
+		pf:     NewProposerFilter(),
+		minv:   minv,
+		top:    big.NewInt(0),
+	}
 	return
 }
 
@@ -204,42 +297,124 @@ func (b *Ballot) Blocks() (c <-chan *Block2) {
 
 // Handle votes for the round
 func (b *Ballot) Handle(v *Vote2) (err error) {
-	//@TODO verify syntax of vote, proposal and block
+
+	//validate syntax
+	ok, err := v.Validate()
+	if !ok {
+		panic("failed to validate vote: " + err.Error())
+	}
 
 	//@TODO verify voter token
-	//@TODo verify token gives voter privileges
+	//@TODO verify token gives voter privileges
 
-	//@TODO if the votes block prev is not the highest ranking block in our view of the
-	//world we ignore it: the voter was running behind and is on the wrong track.
-	//if the prev is equal or higher then whant we know, do count the vote.
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	//@TODO is the block in this vote highest ranking proposal we know of? If not
-	//skip relaying or tallying the vote. Useless to the network
+	// if the vote's proposed block is building on a tip that we don't consider to
+	// be the winning in the last round we drip the vote.
+	if v.Proposal.Block.Prev != b.tip {
+		panic("vote's proposed block is build on a tip that we don't consider to be winning")
+	}
 
-	//@TODO verify also that proposer has made no other proposals in this round,
-	//the voter cannot immitate proposals so this check is ok and makes it harder
-	//for proposers and voters to coerse
+	// if the proposal in this vote doesn't have the highest rank we know of skip
+	// relay to other peers.
+	rank := big.NewInt(0).SetBytes(v.Proposal.Token)
+	if rank.Cmp(b.top) >= 0 {
+		b.top = rank
+	} else {
+		panic("vote's proposal had a lower rank then an other proposa we already saw")
+	}
 
-	//@TODO what if proposals have the same rank? We relay the votes still.
-	//@TODO relay vote to peers
+	// check that we're not counting votes for proposals that were proposed while
+	// a proposer send out other proposals during the round
+	npro := b.pf.Add(v.Proposal.PK, v.Proposal.Token)
+	if npro > 1 { //already proposed at least onces
+		panic("proposer already proposed a block for this round")
+	}
 
-	//@TODO count votes until threshold
-	//@TODO if threshold is reached, send block over result channel. We got ourselves
-	//a new block
+	// at this point we consider the vote usefull to the network: relay it
+	err = b.bw.Write(b.round, &Msg2{Vote: v})
+	if err != nil {
+		panic("failed to relay vote: " + err.Error())
+	}
+
+	// count votes
+	id := v.Proposal.Block.Hash()
+	votes, ok := b.votes[id]
+	if !ok {
+		votes = make(map[[TicketSize]byte]struct{})
+	}
+
+	// map uniquely to a voter's identity so each voter can only vote once on a proposal
+	var voter [PKSize]byte
+	copy(voter[:], v.PK)
+	votes[voter] = struct{}{}
+	b.votes[id] = votes
+
+	// when exacty 1 vote over the threshold we consider the majority being in
+	// favor and accept the block
+	if uint64(len(votes)) == b.minv+1 {
+		b.blocks <- v.Proposal.Block
+
+		// At this point we can close the channel, we filtered votes that
+		// are not voting for the highest known proposal and the ones that were
+		// not filtered reached a threshold. We do not expect that another proposal
+		// will suddenly reach a threshold and can conclude the round.
+		close(b.blocks)
+	}
 
 	return
 }
 
-// Round is a time bound segmentation of messages
+//Lottery uses a long term public and private key to draw random tokens locally
+//that others can verify: A VRF
+type Lottery struct {
+	pk []byte                   //public key
+	sk *[vrf.SecretKeySize]byte //secret key
+}
+
+//NewLottery will generate keys and setup a local lottery using the provided
+//source of crypto randomness
+func NewLottery(rndr io.Reader) (lt *Lottery) {
+	lt = &Lottery{}
+
+	var err error
+	lt.pk, lt.sk, err = vrf.GenerateKey(rndr)
+	if err != nil {
+		panic("failed to generate vrf keys: " + err.Error())
+	}
+
+	return
+}
+
+//Draw a new token for the lottery for the provided round number
+func (lt *Lottery) Draw(round uint64) (token, proof, pk []byte) {
+	roundd := make([]byte, 8)
+	binary.LittleEndian.PutUint64(roundd, round)
+
+	token, proof = vrf.Prove(roundd, lt.sk)
+	return token, proof, lt.pk
+}
+
+// Round is a time bound segmentation of messages that uses messages read from the
+// broadcast to find a block that is mostly likey to be part of the consensus chain
+// very soon.
 type Round struct {
-	bt   time.Duration
-	num  uint64
-	bc   Broadcast2
-	tip  *Block2     //previous round's top block
-	done chan *Round //we write to when we consider this round complete
+	bt   time.Duration //timeout until we cast vote
+	minv uint64        //minimum nr of votes until we accept a block
+
+	num uint64     //round number
+	lt  *Lottery   //vrf lottery
+	bc  Broadcast2 //message broadcast
+	tip ID         //previous round winning block
 
 	ballot *Ballot
 	voter  *Voter2
+	mu     sync.RWMutex
+
+	token []byte
+	proof []byte
+	pk    []byte
 }
 
 // NewRound creates a round and start reading messages for the given round number
@@ -249,22 +424,28 @@ type Round struct {
 // is already send out and everyone can only propose on block per round anyway.
 // We will sill consider votes for blocks that have a higher ranking prev block
 // so we can still complete this round
-func NewRound(bc Broadcast2, num uint64, tip *Block2, bt time.Duration) (r *Round) {
+func NewRound(lt *Lottery, bc Broadcast2, num uint64, tip ID, bt time.Duration, minv uint64) (r *Round) {
 	r = &Round{
-		num:  num,
-		bc:   bc,
+		bt:   bt,
+		minv: minv,
 		tip:  tip,
-		done: make(chan *Round),
 
-		ballot: NewBallot(bc, num),
-		voter:  NewVoter2(bc, num, bt),
+		num: num,
+		lt:  lt,
+		bc:  bc,
+
+		ballot: NewBallot(bc, num, tip, minv),
+		voter:  NewVoter2(bc, num, tip, bt),
 	}
 
-	//@TODO draw ticket just by round, pass to voter to influence if it should
-	//sends out votes (or handle vote messages at all). A possible downside of
-	//doing it just by number is that people can calculat their values ahead of
+	//draw ticket just by round nr. A possible downside of
+	//doing it just by number is that people can calculate their values ahead of
 	//time and decide when they want to actually show up and propose something.
 	//this might influence livelyness in a negative way
+	r.token, r.proof, r.pk = lt.Draw(num)
+
+	//@TODO based on token, check threshold to see if we can be a voter. If not
+	//do not handle those messages at all.
 
 	//message ingress
 	go func() {
@@ -296,49 +477,46 @@ func NewRound(bc Broadcast2, num uint64, tip *Block2, bt time.Duration) (r *Roun
 		}
 	}()
 
-	//valid blocks handling
-	go func() {
-		for {
-			select {
-			case b := <-r.ballot.Blocks():
-				//new block with enough votes, we will immediately consider this round
-				//closed and build a new round on top of it. If this turns out to be wrong we
-				//might be useless as a proposer (because we propose low ranking blocks) but
-				//we can still do voting as long as we at some point receive that prev block
-				//everyone is going on about
-
-				//@TODO store it somewhere, resolve OutOfOrder etc
-
-				//with at least one new block we can call this round complete, we might
-				//receive more votes for higher prio blocks but we won't be doing anything
-				//with that for our position in the next round
-				r.done <- NewRound(r.bc, r.num+1, b, r.bt)
-				close(r.done)
-			}
-		}
-	}()
-
 	return r
+}
+
+// Num returns the round number
+func (r *Round) Num() uint64 {
+	return r.num
+}
+
+// Tip returns the winning block id from the previous round that this round is
+// building on
+func (r *Round) Tip() ID {
+	return r.tip
 }
 
 // Run the round by writing any propoposal and block until at least 1 block with
 // a majority vote was found by the network. Returns a new round when this
 // succeeded or an error when the timeout expired
 func (r *Round) Run(ctx context.Context) (newr *Round, err error) {
-	//@TODO if our ticket gives us proposal right, make a proposal right away. and
-	//write it to network
+	//@TODO based on token, check threshold and see if we are granted the right to
+	//propose or not
 
-	//@TODO figure out how we determine the 'prev' of this block? we always propose
-	//on what we believe was the highest. if this turns out to be wrong our proposal
-	//will not be accepted and no votes will favor it. We will receive votes for blocks
-	//that have a higher prev rank then ours so we can still complete the round. Our
-	//voter role is also fine as we can still determine if the block that is voted
-	//for is
+	//write our own block proposal for the network
+	if err = r.bc.Write(r.num, &Msg2{
+		Proposal: &Proposal2{
+			Token: r.token,
+			PK:    r.pk,
+			Proof: r.proof,
+			Block: &Block2{
+				Prev: r.tip,
+				Data: r.pk,
+			},
+		},
+	}); err != nil {
+		panic("failed to write our own proposal to the broadcast: " + err.Error())
+	}
 
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case newr = <-r.done:
-		return
+	case b := <-r.ballot.Blocks():
+		return NewRound(r.lt, r.bc, r.num+1, b.Hash(), r.bt, r.minv), nil
 	}
 }
