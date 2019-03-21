@@ -11,24 +11,29 @@ import (
 	"github.com/advanderveer/go-test"
 )
 
+// injector allows for easy messages construction for the broadcast network
 type injector struct {
-	pk []byte
+	lt *slot.Lottery
 }
 
 func newInjector(pk byte) (tr *injector) {
-	tr = &injector{pk: make([]byte, slot.PKSize)}
-	tr.pk[0] = pk
+	tr = &injector{}
+
+	rnd := make([]byte, 32)
+	rnd[0] = pk
+
+	tr.lt = slot.NewLottery(bytes.NewReader(rnd))
+
 	return
 }
 
-func (t *injector) propose(prev slot.ID, rank byte, d []byte) *slot.Msg2 {
-	token := make([]byte, slot.TicketSize)
-	token[0] = rank
+func (t *injector) propose(round uint64, prev slot.ID, rank byte, d []byte) *slot.Msg2 {
+	token, proof, pk := t.lt.Draw(round)
 
 	return &slot.Msg2{
 		Proposal: &slot.Proposal2{
-			Proof: make([]byte, slot.ProofSize),
-			PK:    t.pk,
+			Proof: proof,
+			PK:    pk,
 			Token: token,
 			Block: &slot.Block2{
 				Prev: prev,
@@ -38,16 +43,75 @@ func (t *injector) propose(prev slot.ID, rank byte, d []byte) *slot.Msg2 {
 	}
 }
 
-func (t *injector) vote(p *slot.Proposal2) *slot.Msg2 {
+func (t *injector) vote(round uint64, p *slot.Proposal2) *slot.Msg2 {
+	token, proof, pk := t.lt.Draw(round)
+
 	return &slot.Msg2{
 		Vote: &slot.Vote2{
-			Proof: make([]byte, slot.ProofSize),
-			Token: make([]byte, slot.TicketSize),
-			PK:    t.pk,
+			Proof: proof,
+			Token: token,
+			PK:    pk,
 
 			Proposal: p,
 		},
 	}
+}
+
+func TestValidation(t *testing.T) {
+	b1 := &slot.Block2{}
+	ok, err := b1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidBlockNilPrev, err)
+
+	//proposal
+	p1 := &slot.Proposal2{}
+	ok, err = p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidProposalTokenLen, err)
+
+	p1 = &slot.Proposal2{Token: make([]byte, slot.TicketSize)}
+	ok, err = p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidProposalPKLen, err)
+
+	p1 = &slot.Proposal2{Token: make([]byte, slot.TicketSize), PK: make([]byte, slot.PKSize)}
+	ok, err = p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidProposalProofLen, err)
+
+	p1 = &slot.Proposal2{Token: make([]byte, slot.TicketSize), PK: make([]byte, slot.PKSize), Proof: make([]byte, slot.ProofSize)}
+	ok, err = p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidProposalNoBlock, err)
+
+	//vote
+	v1 := &slot.Vote2{}
+	ok, err = v1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidVoteTokenLen, err)
+
+	v1 = &slot.Vote2{Token: make([]byte, slot.TicketSize)}
+	ok, err = v1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidVotePKLen, err)
+
+	v1 = &slot.Vote2{Token: make([]byte, slot.TicketSize), PK: make([]byte, slot.PKSize)}
+	ok, err = v1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidVoteProofLen, err)
+
+	v1 = &slot.Vote2{Token: make([]byte, slot.TicketSize), PK: make([]byte, slot.PKSize), Proof: make([]byte, slot.ProofSize)}
+	ok, err = v1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, slot.ErrInvalidVoteNoProposal, err)
+
+	//valid
+	b1.Prev[0] = 0x01
+	p1.Block = b1
+	v1.Proposal = p1
+	ok, err = v1.Validate()
+	test.Equals(t, true, ok)
+	test.Ok(t, err)
 }
 
 func TestProposerFilter(t *testing.T) {
@@ -61,7 +125,6 @@ func TestProposerFilter(t *testing.T) {
 
 	n3 := pf1.Add([]byte{0x01}, []byte{0x01})
 	test.Equals(t, 2, n3)
-
 }
 
 func TestBlockHash(t *testing.T) {
@@ -85,6 +148,8 @@ func TestLottery(t *testing.T) {
 	test.Equals(t, "494326928e5a", fmt.Sprintf("%.6x", tk1))
 	test.Equals(t, "72296e4cdeb3", fmt.Sprintf("%.6x", proof1))
 	test.Equals(t, "d50ee45c5c2e", fmt.Sprintf("%.6x", pk1))
+	test.Equals(t, true, lt1.Verify(1, pk1, tk1, proof1))
+	test.Equals(t, true, lt2.Verify(1, pk1, tk1, proof1)) //anyone can validate
 
 	tk1, proof1, pk1 = lt1.Draw(1) //must be deterministic for the same round nr
 	test.Equals(t, "494326928e5a", fmt.Sprintf("%.6x", tk1))
@@ -126,7 +191,7 @@ func TestMsgByMsgRoundComplete(t *testing.T) {
 
 	// --- proposals ---
 
-	msg1 := inj1.propose(gen, 0x01, []byte{0x01})
+	msg1 := inj1.propose(1, gen, 0x01, []byte{0x01})
 	test.Ok(t, ep2.Write(1, msg1))
 	time.Sleep(bt * 2) //wait for timer to expire
 
@@ -137,8 +202,8 @@ func TestMsgByMsgRoundComplete(t *testing.T) {
 
 	// --- votes ---
 
-	test.Ok(t, ep2.Write(1, inj1.vote(msg1.Proposal)))
-	test.Ok(t, ep2.Write(1, inj2.vote(msg1.Proposal))) //second vote
+	test.Ok(t, ep2.Write(1, inj1.vote(1, msg1.Proposal)))
+	test.Ok(t, ep2.Write(1, inj2.vote(1, msg1.Proposal))) //second vote
 
 	r2, err := r1.Run(ctx)
 	test.Ok(t, err)

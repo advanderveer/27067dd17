@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"math/big"
 	"sync"
@@ -39,7 +38,7 @@ func (b *Block2) Hash() ID {
 //Validate the syntax
 func (b *Block2) Validate() (ok bool, err error) {
 	if b.Prev == NilID { //no prev block in proposal
-		return false, fmt.Errorf("empty prev")
+		return false, ErrInvalidBlockNilPrev
 	}
 
 	return true, nil
@@ -57,19 +56,19 @@ type Proposal2 struct {
 //Validate the syntax of a proposal
 func (p *Proposal2) Validate() (ok bool, err error) {
 	if len(p.Token) != TicketSize {
-		return false, fmt.Errorf("wrong length for token")
+		return false, ErrInvalidProposalTokenLen
 	}
 
 	if len(p.PK) != PKSize {
-		return false, fmt.Errorf("wrong length for token proof pk")
+		return false, ErrInvalidProposalPKLen
 	}
 
 	if len(p.Proof) != ProofSize {
-		return false, fmt.Errorf("wrong length for token proof")
+		return false, ErrInvalidProposalProofLen
 	}
 
 	if p.Block == nil {
-		return false, fmt.Errorf("no block in proposal")
+		return false, ErrInvalidProposalNoBlock
 	}
 
 	return p.Block.Validate()
@@ -87,19 +86,19 @@ type Vote2 struct {
 //Validate the syntax
 func (v *Vote2) Validate() (ok bool, err error) {
 	if len(v.Token) != TicketSize {
-		return false, fmt.Errorf("wrong length for token")
+		return false, ErrInvalidVoteTokenLen
 	}
 
 	if len(v.PK) != PKSize {
-		return false, fmt.Errorf("wrong length for token proof pk")
+		return false, ErrInvalidVotePKLen
 	}
 
 	if len(v.Proof) != ProofSize {
-		return false, fmt.Errorf("wrong length for token proof")
+		return false, ErrInvalidVoteProofLen
 	}
 
 	if v.Proposal == nil {
-		return false, fmt.Errorf("no proposal in vote")
+		return false, ErrInvalidVoteNoProposal
 	}
 
 	return v.Proposal.Validate()
@@ -143,6 +142,7 @@ func (pf ProposerFilter) Add(pkb []byte, token []byte) (n int) {
 type Voter2 struct {
 	tip        ID
 	bw         BroadcastWriter2
+	lt         *Lottery
 	round      uint64
 	mu         sync.Mutex
 	pf         ProposerFilter
@@ -156,10 +156,11 @@ type Voter2 struct {
 // during a round and broadcasts the highest ranking ones as votes after a configurable
 // timeout. New high-ranking proposals that arrive after this and are broadcasted
 // as votes right away.
-func NewVoter2(bw BroadcastWriter2, round uint64, tip ID, bt time.Duration) (v *Voter2) {
+func NewVoter2(bw BroadcastWriter2, lt *Lottery, round uint64, tip ID, bt time.Duration) (v *Voter2) {
 	v = &Voter2{
 		tip:   tip,
 		bw:    bw,
+		lt:    lt,
 		round: round,
 		pf:    NewProposerFilter(),
 		top:   big.NewInt(0),
@@ -186,10 +187,10 @@ func (v *Voter2) cast() (err error) {
 	for _, p := range v.candidates {
 		pv := &Vote2{Proposal: p}
 		err = v.bw.Write(v.round, &Msg2{Vote: pv})
-		if err != nil {
-			//@TODO do not cancel writing votes for other candidates if this fails
-			panic("failed to write proposal vote: " + err.Error())
-		}
+	}
+
+	if err != nil {
+		return
 	}
 
 	v.candidates = []*Proposal2{} //reset candidates
@@ -205,8 +206,13 @@ func (v *Voter2) Handle(p *Proposal2) (err error) {
 		panic("failed to validate proposal: " + err.Error())
 	}
 
-	//@TODO verify VRF token with pk and proof
-	//@TODO verify that the token provides the right to propose
+	//verify proposer token
+	ok = v.lt.Verify(v.round, p.PK, p.Token, p.Proof)
+	if !ok {
+		panic("invalid proposal token")
+	}
+
+	//@TODO verify that the grants the right to propose (including stake)
 
 	//@TODO if we add randomness to a ticket draw we need to order the blocks
 	//we receive here on chain strength. else proposers can grind blocks with
@@ -265,6 +271,7 @@ func (v *Voter2) Handle(p *Proposal2) (err error) {
 // Ballot handles votes for a certain round
 type Ballot struct {
 	tip    ID
+	lt     *Lottery
 	blocks chan *Block2
 	bw     BroadcastWriter2
 	round  uint64
@@ -276,10 +283,11 @@ type Ballot struct {
 }
 
 // NewBallot creates the round's vote handler
-func NewBallot(bw BroadcastWriter2, round uint64, tip ID, minv uint64) (b *Ballot) {
+func NewBallot(bw BroadcastWriter2, lt *Lottery, round uint64, tip ID, minv uint64) (b *Ballot) {
 	b = &Ballot{
 		tip:    tip,
 		bw:     bw,
+		lt:     lt,
 		blocks: make(chan *Block2),
 		round:  round,
 		votes:  make(map[ID]map[[TicketSize]byte]struct{}),
@@ -304,11 +312,23 @@ func (b *Ballot) Handle(v *Vote2) (err error) {
 		panic("failed to validate vote: " + err.Error())
 	}
 
-	//@TODO verify voter token
-	//@TODO verify token gives voter privileges
-
+	//course lock
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	//verify voter token
+	ok = b.lt.Verify(b.round, v.PK, v.Token, v.Proof)
+	if !ok {
+		panic("invalid voter token")
+	}
+
+	//verify proposer token
+	ok = b.lt.Verify(b.round, v.Proposal.PK, v.Proposal.Token, v.Proposal.Proof)
+	if !ok {
+		panic("invalid proposer token")
+	}
+
+	//@TODO verify token gives voter privileges (including stake)
 
 	// if the vote's proposed block is building on a tip that we don't consider to
 	// be the winning in the last round we drip the vote.
@@ -387,13 +407,21 @@ func NewLottery(rndr io.Reader) (lt *Lottery) {
 	return
 }
 
+func (lt *Lottery) seed(round uint64) (seed []byte) {
+	seed = make([]byte, 8)
+	binary.LittleEndian.PutUint64(seed, round)
+	return
+}
+
 //Draw a new token for the lottery for the provided round number
 func (lt *Lottery) Draw(round uint64) (token, proof, pk []byte) {
-	roundd := make([]byte, 8)
-	binary.LittleEndian.PutUint64(roundd, round)
-
-	token, proof = vrf.Prove(roundd, lt.sk)
+	token, proof = vrf.Prove(lt.seed(round), lt.sk)
 	return token, proof, lt.pk
+}
+
+//Verify the token drawn by a lottery from another member
+func (lt *Lottery) Verify(round uint64, pk, token, proof []byte) (ok bool) {
+	return vrf.Verify(pk, lt.seed(round), token, proof)
 }
 
 // Round is a time bound segmentation of messages that uses messages read from the
@@ -434,8 +462,8 @@ func NewRound(lt *Lottery, bc Broadcast2, num uint64, tip ID, bt time.Duration, 
 		lt:  lt,
 		bc:  bc,
 
-		ballot: NewBallot(bc, num, tip, minv),
-		voter:  NewVoter2(bc, num, tip, bt),
+		ballot: NewBallot(bc, lt, num, tip, minv),
+		voter:  NewVoter2(bc, lt, num, tip, bt),
 	}
 
 	//draw ticket just by round nr. A possible downside of

@@ -17,7 +17,7 @@ func TestBroadcast2(t *testing.T) {
 
 	inj1 := newInjector(0x01)
 
-	msg1 := inj1.propose(slot.NilID, 1, []byte{0x01})
+	msg1 := inj1.propose(1, slot.NilID, 1, []byte{0x01})
 	test.Ok(t, bc1.Write(1, msg1))
 
 	msg2 := &slot.Msg2{}
@@ -40,6 +40,6 @@ func TestBroadcast2(t *testing.T) {
 	test.Equals(t, io.EOF, err)
 
 	//Writing should still be possible
-	msg4 := inj1.propose(slot.NilID, 1, []byte{0x01})
+	msg4 := inj1.propose(1, slot.NilID, 1, []byte{0x01})
 	test.Ok(t, bc1.Write(1, msg4)) //should not panic
 }
