@@ -38,3 +38,17 @@ observation combinations and it not known when the process is done.
 idea 3: if all combinations are exhaused member may start on a normal proof-of-work
 to prevent chain death? This should be unlikely and the reward should be small enough
 that it doesn't become the default mode of work.
+
+
+//hat motivates a member to wait for the highest proposals? it can not
+//encode a block with a prev that has an higher weight then the heigest ranking
+//previous proposal that was witnessed. i.e the change is small that the block
+//will be included in the tip eventually. i.e. if you have to wait anyway, why
+//not send the highest ranking proposal, also gives you more options to solve the
+//puzzle. The weight of a block in the chain is determined by token of the proposal
+//it came with
+
+
+## TODO
+- [ ] make out-of-order able to expire items
+- [ ] *bonus* make out-of-order allow for concurrent access

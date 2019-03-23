@@ -24,10 +24,11 @@ func p(round uint64, r byte) *rev.Proposal {
 
 func TestOutOfOrder(t *testing.T) {
 	var handled []*rev.Proposal
+	p0 := p(0, 0x01)
 	o1 := rev.NewOutOfOrder(rev.HandlerFunc(func(p *rev.Proposal) {
 		handled = append(handled, p)
 		return
-	}))
+	}), p0)
 
 	p1 := p(1, 0x01)
 	p2 := p(2, 0x02)
@@ -37,7 +38,7 @@ func TestOutOfOrder(t *testing.T) {
 	p4 := p(4, 0x04)
 	p4.Witness.Add(p3.Hash(), p1.Hash())
 	p5 := p(5, 0x05)
-	p5.Witness.Add(p1.Hash())
+	p5.Witness.Add(p1.Hash(), p0.Hash())
 
 	//  /---------------------p5
 	// p1 <- p2 <- p3 <- p4
@@ -59,5 +60,5 @@ func TestOutOfOrder(t *testing.T) {
 
 	no, nh := o1.Size()
 	test.Equals(t, 0, no)
-	test.Equals(t, 5, nh)
+	test.Equals(t, 6, nh)
 }

@@ -33,6 +33,24 @@ func NewProposal(pk []byte, sk *[vrf.SecretKeySize]byte, round uint64) (p *Propo
 	return
 }
 
+//Validate the proposal's token and syntax
+func (p *Proposal) Validate() (ok bool, err error) {
+	ok = vrf.Verify(p.PK, seed(p.Round), p.Token, p.Proof)
+	if !ok {
+		return false, ErrProposalTokenInvalid
+	}
+
+	if p.Block == nil {
+		return false, ErrProposalHasNoBlock
+	}
+
+	if len(p.Witness) < 1 {
+		return false, ErrProposalHasNoWitness
+	}
+
+	return true, nil
+}
+
 //Hash returns a unique fingerprint that represents the content
 func (p *Proposal) Hash() (id PID) {
 	r := make([]byte, 8)

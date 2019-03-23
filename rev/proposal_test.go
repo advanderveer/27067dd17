@@ -50,3 +50,29 @@ func TestProposalHashing(t *testing.T) {
 	p1.Round = 2
 	test.Equals(t, "365de8b6fa5b", fmt.Sprintf("%.6x", p1.Hash()))
 }
+
+func TestProposalValidation(t *testing.T) {
+	rnd1 := bytes.NewReader(make([]byte, 32))
+	pk1, sk1, err := vrf.GenerateKey(rnd1)
+	test.Ok(t, err)
+	p1 := rev.NewProposal(pk1, sk1, 1)
+
+	ok, err := p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, rev.ErrProposalHasNoBlock, err)
+	p1.Block = rev.B([]byte{0x01}, rev.NilID)
+
+	ok, err = p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, rev.ErrProposalHasNoWitness, err)
+	p1.Witness = rev.PSet(p1.Hash())
+
+	ok, err = p1.Validate()
+	test.Equals(t, true, ok)
+	test.Ok(t, err)
+
+	p1.Round = 2
+	ok, err = p1.Validate()
+	test.Equals(t, false, ok)
+	test.Equals(t, rev.ErrProposalTokenInvalid, err)
+}

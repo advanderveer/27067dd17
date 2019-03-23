@@ -3,23 +3,25 @@ package rev
 // OutOfOrder can defer proposal handling until its dependencies have been
 // handled first. Some proposals might never get resolved if their dependencies
 // never arrive. This might be due to a member that tried to forge proof or
-// because the network failed to replicate it. @TODO in any case, we need a way
-// to expire old proposals
+// because the network failed to replicate it.
 type OutOfOrder struct {
-	h Handler
-	//@TODO we would probably like to make this suitable for concurrent use but
-	//that puts a strain on how long each handle function may take
-
+	h       Handler
 	orphans map[PID]map[PID]*Proposal
 	handled PIDSet
 }
 
 //NewOutOfOrder will call 'hf' on every proposal that is marke as resolved
-func NewOutOfOrder(h Handler) (o *OutOfOrder) {
+func NewOutOfOrder(h Handler, ps ...*Proposal) (o *OutOfOrder) {
 	o = &OutOfOrder{
 		h:       h,
 		orphans: make(map[PID]map[PID]*Proposal),
 		handled: make(PIDSet),
+	}
+
+	//preload some proposals as being handled, mainly usefull such that handlers
+	//don't wait on the genesis block for example
+	for _, p := range ps {
+		o.handled[p.Hash()] = struct{}{}
 	}
 
 	return
