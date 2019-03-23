@@ -19,18 +19,20 @@ type Engine struct {
 	mu     sync.RWMutex
 	done   chan struct{}
 	logs   *log.Logger
+	idn    *Identity
 	gen    *Proposal
 	chain  *Chain
 }
 
 // NewEngine creates the engine
-func NewEngine(logw io.Writer, bc Broadcast, t int) (e *Engine) {
+func NewEngine(logw io.Writer, idn *Identity, bc Broadcast, t int) (e *Engine) {
 	e = &Engine{
 		rounds: make(map[uint64]*Round),
 		latest: 0,
 		bc:     bc,
 		done:   make(chan struct{}, 1),
 		logs:   log.New(logw, "", 0),
+		idn:    idn,
 		res:    make(chan *HandleResult, 1),
 		chain:  NewChain(t),
 	}
@@ -112,6 +114,7 @@ func (e *Engine) Handle(p *Proposal) {
 	defer e.mu.Unlock()
 
 	//empty our result buffer if no-one read it
+	//@TODO this looks ugly, is it a race condition?
 	if len(e.res) > 0 {
 		<-e.res
 	}
@@ -168,17 +171,19 @@ func (e *Engine) Handle(p *Proposal) {
 	witness, prev := curr.Observe(p)
 	if witness != nil {
 
-		_ = prev
-		//@TODO we can make a proposal for the next round (if our ticket allows us to)
-		//@TODO open a new round if we haven't seen anyone else with a proposal for that round
-		/// - the weight of our block will be that of the proposals priority but blocks
-		//    will always try to build on blocks with the highest priority so there is
-		//    no guarantee that it will be part of the longest chain
-		//  - the block that is references by 'prev' needs to be part of the witnesses
-		//    that we provide. Logically we want to build on the one that is the highest
+		//create a new proposal
+		newp := e.idn.CreateProposal(p.Round + 1)
+		newp.Block = &Block{Prev: prev, Data: []byte(fmt.Sprintf("%d: %.6x", newp.Round, e.idn.pk))}
+		newp.Witness = witness
 
-		//@TODO we encode a block with 'prev' being the heaviest tip at the chain height
-		//that corresponds to this round-1. Longest tip consensus.
+		//@TODO (optimization) handle our own proposal right away, loopback to ourselves?
+		//@TODO (optimization) only relay if the newp.Token grants us this
+
+		//broadcast our new proposal to the network
+		err = e.bc.Write(&Msg{Proposal: newp})
+		if err != nil {
+			e.logs.Printf("[ERRO] failed to broadcast our new proposal: %v", err)
+		}
 	}
 
 	//@TODO append the block that is encoded in the proposal to our chain with with

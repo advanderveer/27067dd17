@@ -14,9 +14,10 @@ import (
 func TestEmptyProposalIgnore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	idn := rev.NewIdentity([]byte{0x01})
 	logb := bytes.NewBuffer(nil)
 	bc1 := rev.NewMemBroadcast()
-	e1 := rev.NewEngine(logb, bc1, 1)
+	e1 := rev.NewEngine(logb, idn, bc1, 1)
 
 	inj1 := rev.NewInjector([]byte{0x01})
 	inj1.To(bc1)
@@ -32,8 +33,9 @@ func TestProposalHandlingValidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
+	idn := rev.NewIdentity([]byte{0x02})
 	bc1 := rev.NewMemBroadcast()
-	e1 := rev.NewEngine(ioutil.Discard, bc1, 1)
+	e1 := rev.NewEngine(ioutil.Discard, idn, bc1, 1)
 
 	inj1 := rev.NewInjector([]byte{0x01})
 	inj1.To(bc1)
@@ -77,10 +79,13 @@ func TestProposalHandlingValidation(t *testing.T) {
 	test.Equals(t, true, res.OtherEnteredNewRound)
 	test.Equals(t, true, res.Relayed)
 
-	//check if we got our relayed message
-	msgr := &rev.Msg{}
-	test.Ok(t, inj1.Read(msgr))
-	test.Equals(t, p1, msgr.Proposal)
+	// check if we got our new proposal
+	msg1 := <-inj1.Collect()
+	test.Equals(t, uint64(2), msg1.Proposal.Round)
+
+	// check if we got our relayed preoposal
+	msg2 := <-inj1.Collect()
+	test.Equals(t, p1, msg2.Proposal)
 
 	test.Ok(t, e1.Shutdown(ctx))
 }

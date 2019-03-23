@@ -2,13 +2,10 @@ package rev
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/gob"
 	"fmt"
 	"io"
 	"sync"
-
-	"github.com/advanderveer/27067dd17/vrf"
 )
 
 //Msg transports information over broaddcast
@@ -26,34 +23,44 @@ type Broadcast interface {
 //Injector allows for writing specific messages to broadcast, mainly usefull for
 //black box testing of the protocol
 type Injector struct {
-	pk []byte
-	sk *[vrf.SecretKeySize]byte
+	reads chan *Msg
+	idn   *Identity
 	*MemBroadcast
 }
 
 //NewInjector creates an injector with identity using the reader for random bytes
 func NewInjector(rndid []byte) (inj *Injector) {
-	inj = &Injector{MemBroadcast: NewMemBroadcast()}
-
-	var err error
-	rndr := rand.Reader
-	if rndid != nil {
-		rb := make([]byte, 32)
-		copy(rb, rndid)
-		rndr = bytes.NewReader(rb)
+	inj = &Injector{
+		MemBroadcast: NewMemBroadcast(),
+		idn:          NewIdentity(rndid),
+		reads:        make(chan *Msg, 100), //reasonably large buffer
 	}
 
-	inj.pk, inj.sk, err = vrf.GenerateKey(rndr)
-	if err != nil {
-		panic("failed to generate vrf keys for injector: " + err.Error())
-	}
+	go func() {
+		for {
+			msg := &Msg{}
+			err := inj.Read(msg)
+			if err == io.EOF {
+				return
+			} else if err != nil {
+				panic("injector failed to collect: " + err.Error())
+			}
+
+			inj.reads <- msg
+		}
+	}()
 
 	return
 }
 
+//Collect returns a channel that buffers messages written to the injector
+func (inj *Injector) Collect() <-chan *Msg {
+	return inj.reads
+}
+
 // Propose the following or panic by writing to the broadcast
 func (inj *Injector) Propose(round uint64, b *Block, witness ...*Proposal) (p *Proposal) {
-	msg := &Msg{Proposal: NewProposal(inj.pk, inj.sk, round)}
+	msg := &Msg{Proposal: inj.idn.CreateProposal(round)}
 	msg.Proposal.Block = b
 	for _, w := range witness {
 		msg.Proposal.Witness.Add(w.Hash())

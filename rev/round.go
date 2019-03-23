@@ -51,6 +51,9 @@ func (r *Round) Observe(p *Proposal) (witness PIDSet, tip ID) {
 	//add proposal
 	r.add(p)
 
+	//@TODO only send out one proposal, unless a new highest proposal is observed
+	//in that case retry?
+
 	//we would like the tip we're building rank as high as possible so we keep
 	//a prev ref to the highest rak
 	tip = r.top.Block.Hash()
