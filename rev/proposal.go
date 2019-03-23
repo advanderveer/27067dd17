@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"math/big"
 	"sort"
 
 	"github.com/advanderveer/27067dd17/vrf"
@@ -49,6 +50,23 @@ func (p *Proposal) Validate() (ok bool, err error) {
 	}
 
 	return true, nil
+}
+
+//Rank returns the token as a measure of ranking
+func (p *Proposal) Rank() (rank *big.Int) {
+	rank = big.NewInt(0)
+	rank.SetBytes(p.Token)
+	return
+}
+
+//GT retruns true if this propoals ranks greater then the 'other' proposal
+func (p *Proposal) GT(other *Proposal) (ok bool) {
+	cmp := p.Rank().Cmp(other.Rank())
+	if cmp > 0 {
+		return true
+	}
+
+	return false
 }
 
 //Hash returns a unique fingerprint that represents the content

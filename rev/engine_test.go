@@ -16,7 +16,7 @@ func TestEmptyProposalIgnore(t *testing.T) {
 	defer cancel()
 	logb := bytes.NewBuffer(nil)
 	bc1 := rev.NewMemBroadcast()
-	e1 := rev.NewEngine(logb, bc1)
+	e1 := rev.NewEngine(logb, bc1, 1)
 
 	inj1 := rev.NewInjector([]byte{0x01})
 	inj1.To(bc1)
@@ -33,13 +33,15 @@ func TestProposalHandlingValidation(t *testing.T) {
 	defer cancel()
 
 	bc1 := rev.NewMemBroadcast()
-	e1 := rev.NewEngine(ioutil.Discard, bc1)
+	e1 := rev.NewEngine(ioutil.Discard, bc1, 1)
 
 	inj1 := rev.NewInjector([]byte{0x01})
 	inj1.To(bc1)
 	bc1.To(inj1.MemBroadcast)
 
 	//invalid proposal, genesis is invalid proposal
+	//@TODO the invalid proposal is now marked as "handled", which makes the assertion
+	//noted below work (by coincidence).
 	test.Ok(t, inj1.Write(&rev.Msg{&rev.Proposal{}}))
 	res := <-e1.Result()
 	test.Equals(t, rev.ErrProposalTokenInvalid, res.ValidationErr)
@@ -58,7 +60,9 @@ func TestProposalHandlingValidation(t *testing.T) {
 	test.Equals(t, true, res.WitnessRoundTooFarOff)
 	test.Equals(t, false, res.Relayed)
 
-	// invalid witness, doesn't exist
+	// invalid witness, doesn't exist @TODO this works by coincidence, the witness
+	// should never not-exist because the out-of-order prevents us from serving those
+	// normally
 	inj1.Propose(1, rev.B([]byte{0x01}, rev.NilID), &rev.Proposal{})
 	res = <-e1.Result()
 	test.Equals(t, false, res.WitnessRoundTooFarOff)
@@ -66,7 +70,8 @@ func TestProposalHandlingValidation(t *testing.T) {
 	test.Equals(t, false, res.Relayed)
 
 	// valid proposal, start round 1 and relay
-	p1 := inj1.Propose(1, rev.B([]byte{0x01}, rev.NilID), e1.Genesis())
+	gen := e1.Genesis()
+	p1 := inj1.Propose(1, rev.B([]byte{0x01}, gen.Block.Hash()), gen)
 	res = <-e1.Result()
 	test.Ok(t, res.InvalidWitnessErr)
 	test.Equals(t, true, res.OtherEnteredNewRound)

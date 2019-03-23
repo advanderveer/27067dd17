@@ -48,7 +48,20 @@ that it doesn't become the default mode of work.
 //puzzle. The weight of a block in the chain is determined by token of the proposal
 //it came with
 
+## Research TODO
+- Why would anyone send out low ranking proposals? Members might think that it is
+  relatively low and not do it at all? Might need to icentivize this. That would
+  also give some motivation to low stake members, but wouldn't this open up to sybill
+  attacks.
+- Can we protect against sybill by enforcing that creating a new public key takes
+  a shit load of time e.g: another math puzzle?
+
 
 ## TODO
 - [ ] make out-of-order able to expire items
 - [ ] *bonus* make out-of-order allow for concurrent access
+- [ ] research another proof, where we encode full proposal proofs instead of
+      references to them and simply assert on the math puzzle.
+      - PRO: do no longer need out-of-order logic?
+      - PRO: can continue from any round without needing prev rounds?
+      - CON: cannot read any block data from the witnesses

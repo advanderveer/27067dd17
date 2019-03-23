@@ -8,68 +8,6 @@ import (
 	"sync"
 )
 
-//Round represents a time-bound segmentation of proposals. Members move through
-//rounds such that old ones eventually get no messages and can be finalized.
-type Round struct {
-	proposals map[PID]*Proposal
-	mu        sync.RWMutex
-}
-
-//NewRound sets up a new round
-func NewRound(ps ...*Proposal) (r *Round) {
-	r = &Round{proposals: make(map[PID]*Proposal)}
-	for _, p := range ps {
-		r.proposals[p.Hash()] = p
-	}
-
-	//draw ticket from lottery
-	return
-}
-
-// Observe a proposal for this round. With enough observations we can Prove
-// that we saw enough proposals and our conclusion about the top ranking one
-// has merrit.
-func (r *Round) Observe(p *Proposal) (witness PIDSet) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	//add proposal to proof
-
-	//check if we have enough/can solve puzzle
-
-	//figure out how we can balance the witness functions such that it indicates
-	//that the majority of members in the network get the time to read the message
-
-	//if so, return ok
-	return nil
-}
-
-// Question the witness and verify if its proof is valid for this round from
-// our perspective
-func (r *Round) Question(witness PIDSet) (ok bool, err error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	//check  if we know about the provided witness
-	for wid := range witness {
-		_, ok = r.proposals[wid]
-		if !ok {
-			break
-		}
-	}
-
-	if !ok {
-		return false, ErrProposalWitnessUnknown
-	}
-
-	//proposals must exist
-	//must have solved puzzle
-	//must be above threshold
-	//must be min amount
-
-	return true, nil
-}
-
 // Engine reads messages one-by-one from the broadcast and moves through the rounds
 // by witnessing and emitting proposals.
 type Engine struct {
@@ -82,10 +20,11 @@ type Engine struct {
 	done   chan struct{}
 	logs   *log.Logger
 	gen    *Proposal
+	chain  *Chain
 }
 
 // NewEngine creates the engine
-func NewEngine(logw io.Writer, bc Broadcast) (e *Engine) {
+func NewEngine(logw io.Writer, bc Broadcast, t int) (e *Engine) {
 	e = &Engine{
 		rounds: make(map[uint64]*Round),
 		latest: 0,
@@ -93,11 +32,12 @@ func NewEngine(logw io.Writer, bc Broadcast) (e *Engine) {
 		done:   make(chan struct{}, 1),
 		logs:   log.New(logw, "", 0),
 		res:    make(chan *HandleResult, 1),
+		chain:  NewChain(t),
 	}
 
 	//genesis block and proposal
-	e.gen = &Proposal{Token: make([]byte, 32)}
-	e.rounds[0] = NewRound(e.gen)
+	e.gen = &Proposal{Token: make([]byte, 32), Block: &Block{}}
+	e.rounds[0] = NewRound(e.chain, e.gen)
 
 	//out-of-order buffer, genesis is always already handled
 	e.ooo = NewOutOfOrder(e, e.gen)
@@ -187,30 +127,27 @@ func (e *Engine) Handle(p *Proposal) {
 	}
 
 	//check if the proposal is not working a round that is too far off
-	last := e.rounds[p.Round-1]
-	if last == nil {
+	prior := e.rounds[p.Round-1]
+	if prior == nil {
 		res.WitnessRoundTooFarOff = true
 		e.logs.Printf("[INFO] received proposal with witness for round %d but its too far off our current round: %d, ignore it", p.Round-1, e.latest)
 		return
 	}
 
-	//validate the witness
-	ok, err = last.Question(p.Witness)
+	//validate the witness given the tip the other member is proposing the build on
+	ok, err = prior.Question(p.Block.Prev, p.Witness)
 	if !ok {
 		res.InvalidWitnessErr = err
 		e.logs.Printf("[INFO] proposal witness was invalid: %v", err)
 		return
 	}
 
-	//@TODO validate that the prev block doesn't have a weight higher then what
-	//any of what we've witnessed.
-
 	//check if we receive a proposal for the next round
 	if p.Round > e.latest && (p.Round-e.latest == 1) {
 		res.OtherEnteredNewRound = true
-		e.rounds[p.Round] = NewRound()
+		e.rounds[p.Round] = NewRound(e.chain)
 		e.latest = p.Round //move our focus
-		//@TODO remove old rounds to finalize
+		//@TODO (optimization) remove old rounds to finalize
 	}
 
 	//get the current round, might just be created. This should always exist because
@@ -221,28 +158,31 @@ func (e *Engine) Handle(p *Proposal) {
 		return
 	}
 
-	//@TODO limit how much proposals we accept per round? The top N for example and
-	//only relay if it was relevant at all? Or put otherwise, members can build on
-	//a tip that has the top witness
+	//@TODO (optimization) check if a user didn't already make a proposal, do not
+	//relay a second proposal from the same user
+
+	//@TODO (optimization) limit how much proposals we accept per round? The top N
+	//for example and only relay if it was relevant at all?
 
 	//observe the proposal for the current round
-	witness := curr.Observe(p)
+	witness, prev := curr.Observe(p)
 	if witness != nil {
 
+		_ = prev
 		//@TODO we can make a proposal for the next round (if our ticket allows us to)
-		//@TODO open it if it didn't exist yet
-		//@TODO check if we didn't already make a proposal
+		//@TODO open a new round if we haven't seen anyone else with a proposal for that round
+		/// - the weight of our block will be that of the proposals priority but blocks
+		//    will always try to build on blocks with the highest priority so there is
+		//    no guarantee that it will be part of the longest chain
+		//  - the block that is references by 'prev' needs to be part of the witnesses
+		//    that we provide. Logically we want to build on the one that is the highest
 
 		//@TODO we encode a block with 'prev' being the heaviest tip at the chain height
 		//that corresponds to this round-1. Longest tip consensus.
 	}
 
-	//@TODO append the block that is encoded in the proposal to our chain. Or only
-	//if it heavier then other blocks at that height? The weight of the block
-	//is determined by the proposal token.
-
-	//@TODO only relay if it is in our top N of the round so the network acts as
-	//as a filter to not overwhelm it with proposals
+	//@TODO append the block that is encoded in the proposal to our chain with with
+	//the weight that corresponds to the proposal token rank.
 
 	//relay the proposal
 	err = e.bc.Write(&Msg{Proposal: p})

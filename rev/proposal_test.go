@@ -76,3 +76,11 @@ func TestProposalValidation(t *testing.T) {
 	test.Equals(t, false, ok)
 	test.Equals(t, rev.ErrProposalTokenInvalid, err)
 }
+
+func TestProposalRanking(t *testing.T) {
+	p1 := p(1, 0x01)
+	p2 := p(2, 0x02)
+	test.Equals(t, "78065307293623676155921361934745606364840280270519753198554444479665042912905", p1.Rank().String())
+	test.Equals(t, "104220727711904981944657613849748948274513379498498875600696343542731042816671", p2.Rank().String())
+	test.Equals(t, true, p2.GT(p1))
+}
