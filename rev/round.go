@@ -14,6 +14,7 @@ type Round struct {
 	top       *Proposal
 	mu        sync.RWMutex
 	chain     *Chain
+	propose   bool
 }
 
 //NewRound sets up a new round
@@ -38,6 +39,7 @@ func (r *Round) add(p *Proposal) {
 	//new top proposal
 	if r.top == nil || p.GT(r.top) {
 		r.top = p
+		r.propose = true
 	}
 }
 
@@ -58,6 +60,11 @@ func (r *Round) Observe(p *Proposal) (witness PIDSet, tip ID) {
 	//a prev ref to the highest rak
 	tip = r.top.Block.Hash()
 
+	//if we already proposed skip until we see a new top proposal
+	if !r.propose {
+		return nil, tip
+	}
+
 	//figure out if we already witnessed enough to propose a block that
 	//builds onto the top proposal's block.
 	if len(r.proposals) < r.chain.WitnessThreshold(tip) {
@@ -76,6 +83,7 @@ func (r *Round) Observe(p *Proposal) (witness PIDSet, tip ID) {
 		witness.Add(pid)
 	}
 
+	r.propose = false //disable until a new top proposal is observed
 	return witness, tip
 }
 
