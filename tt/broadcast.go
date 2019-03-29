@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-//Msg transports information over broaddcast
+//Msg transports information over the broadcast network.
 type Msg struct {
 	Vote  *Vote
 	Block *Block

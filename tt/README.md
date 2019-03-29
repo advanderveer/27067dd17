@@ -54,7 +54,7 @@ PRO: mechanism to create more votes, less roles and logic
 PRO: have an ensurance that the system never halts
 CON: slow? but we need some rating mechanism anyway.
 
-1) Voters repeatedly send votes for a certain tip over the network. Each vote requires
+1) Voters send votes for a certain tip over the network. Each vote requires
 a small proof of work (PoW) to prevent spamming. This PoW's difficulty doesn't change
 as the the network increases in size. It is purely as a rate limiting mechanism. It contains
 a fixed amount of data and can be broadcasted over UDP, losing one is not a problem.
@@ -90,3 +90,5 @@ small spam proof of work
 Either allow for a mechanism that allows continuing after no block was found or
 allow each identity to create multiple votes per tip. Or can we balance the difficulty
 and VRF thresholds such that it just very unlikely that no-one finds a solution?
+Or simply remove any incentive of spamming the network with votes? Only speeds up
+the algorithm?

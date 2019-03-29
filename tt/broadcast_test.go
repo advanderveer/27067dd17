@@ -64,5 +64,4 @@ func TestInjectorCollection(t *testing.T) {
 
 	msgs := inj1.Collect()
 	test.Equals(t, 1, len(msgs))
-
 }
