@@ -72,3 +72,21 @@ switches once a new tip comes along. To offer finality.
 - Short Proof of Work for VRF token vote @~1 sec, tip height determines the token
 - Combine votes from distict voters to solve another math puzzle, if solved closes the height
 - Relay policy only allows for relaying votes for.
+
+## Problems / Questions
+- _How to prevent one person generating a lot of votes for a miner, or how to make
+sure that throwing more computers at it doesn't work?_
+- _Why would anyone broadcast votes to the network?_ there is a reward for being included
+in a block.
+- _But then how to NOT reward spamming?_ Network filters multiple votes for a tip(?)
+- _But then how to prevent people generating there own votes?_ A block requires votes from
+distinct voters so selfish people will be outperformed.
+- _But then how to prevent chain death from lack of votes?_
+
+- _How to prevent people from emitting votes for each tip?_ Add finalization mechanism
+small spam proof of work
+
+## Dilemma
+Either allow for a mechanism that allows continuing after no block was found or
+allow each identity to create multiple votes per tip. Or can we balance the difficulty
+and VRF thresholds such that it just very unlikely that no-one finds a solution?
