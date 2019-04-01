@@ -7,13 +7,14 @@ import (
 	"log"
 )
 
-//Engine reads, handles and writes messages that run the propotocol
+//Engine reads, handles and writes messages that run the protocol
 type Engine struct {
 	idn   *Identity
 	bc    Broadcast
 	logs  *log.Logger
 	done  chan struct{}
 	miner *Miner
+	ooo   *OutOfOrder
 }
 
 //NewEngine creates a new engine
@@ -25,6 +26,8 @@ func NewEngine(logw io.Writer, idn *Identity, bc Broadcast, m *Miner) (e *Engine
 		done:  make(chan struct{}, 1),
 		miner: m,
 	}
+
+	e.ooo = NewOutOfOrder(e)
 
 	go func() {
 		for {
@@ -38,17 +41,7 @@ func NewEngine(logw io.Writer, idn *Identity, bc Broadcast, m *Miner) (e *Engine
 				break //shutting down
 			}
 
-			//@TODO out-of-order handle
-			//@TODO do handlich concurrently
-
-			if msg.Vote != nil {
-				e.HandleVote(msg.Vote)
-			} else if msg.Block != nil {
-				e.HandleBlock(msg.Block)
-			} else {
-				e.logs.Printf("[INFO] received unkown message, ignoring it")
-				continue //nothing to do
-			}
+			e.ooo.Handle(msg)
 		}
 
 		close(e.done) //indicate we've closed down message handling
@@ -73,17 +66,28 @@ func (e *Engine) Shutdown(ctx context.Context) (err error) {
 	}
 }
 
+//Handle a message
+func (e *Engine) Handle(msg *Msg) {
+	if msg.Vote != nil {
+		go e.HandleVote(msg.Vote)
+	} else if msg.Block != nil {
+		go e.HandleBlock(msg.Block)
+	} else {
+		e.logs.Printf("[INFO] received unkown message, ignoring it")
+		return //nothing to do
+	}
+}
+
 //HandleVote will feed votes to the miner
 func (e *Engine) HandleVote(v *Vote) {
-
+	//@TODO validate vote
 	//@TODO send vote to miner
 	//@TODO relay if vote is for the correct tip
-
 }
 
 //HandleBlock will add a block to the chain and move the tip
 func (e *Engine) HandleBlock(b *Block) {
-
+	//@TOD validate
 	//@TODO add to block, check if new tip
-
+	//@TODO resolve any deferred handling of messages
 }

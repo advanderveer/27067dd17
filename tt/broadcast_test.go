@@ -39,19 +39,33 @@ func TestInjectorVoting(t *testing.T) {
 
 	id1 := tt.ID{}
 	id1[0] = 0x01
-	t0 := time.Now()
-	v1 := inj1.Vote(id1)
 
-	msg := &tt.Msg{}
-	test.Ok(t, bc1.Read(msg))
+	t.Run("vote injection", func(t *testing.T) {
+		t0 := time.Now()
+		v1 := inj1.Vote(id1)
 
-	dur := time.Now().Sub(t0)
-	test.Assert(t, dur > time.Millisecond*100, "should have taken at least min latency")
+		msg := &tt.Msg{}
+		test.Ok(t, bc1.Read(msg))
 
-	test.Equals(t, v1, msg.Vote)
-	test.Equals(t, "2eba0247", fmt.Sprintf("%.4x", msg.Vote.Token))
-	test.Equals(t, "6a7a21d9", fmt.Sprintf("%.4x", msg.Vote.Proof))
-	test.Equals(t, "4762ad64", fmt.Sprintf("%.4x", msg.Vote.PK))
+		dur := time.Now().Sub(t0)
+		test.Assert(t, dur > time.Millisecond*100, "should have taken at least min latency")
+
+		test.Equals(t, v1, msg.Vote)
+		test.Equals(t, "2eba0247", fmt.Sprintf("%.4x", msg.Vote.Token))
+		test.Equals(t, "6a7a21d9", fmt.Sprintf("%.4x", msg.Vote.Proof))
+		test.Equals(t, "4762ad64", fmt.Sprintf("%.4x", msg.Vote.PK))
+		test.Equals(t, id1, msg.Dependency())
+	})
+
+}
+
+func TestBlockDep(t *testing.T) {
+	id1 := tt.ID{}
+	id1[0] = 0x01
+	msg2 := &tt.Msg{Block: tt.B(id1, nil)}
+	test.Equals(t, id1, msg2.Dependency())
+
+	test.Equals(t, tt.NilID, (&tt.Msg{}).Dependency())
 }
 
 func TestInjectorCollection(t *testing.T) {

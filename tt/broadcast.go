@@ -16,6 +16,18 @@ type Msg struct {
 	Block *Block
 }
 
+//Dependency returns any block the message is dependent on or a NilID
+//if it isn't dependant on anything
+func (msg *Msg) Dependency() (dep ID) {
+	if msg.Vote != nil {
+		return msg.Vote.Tip
+	} else if msg.Block != nil {
+		return msg.Block.Prev
+	} else {
+		return NilID
+	}
+}
+
 //Broadcast provide reliable message dissemation
 type Broadcast interface {
 	Read(msg *Msg) (err error)
