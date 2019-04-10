@@ -59,8 +59,8 @@ func (idn *Identity) String() string {
 	return fmt.Sprintf("%.4x", idn.pk)
 }
 
-//CreateBlock will create a block signed by this identity
-func (idn *Identity) CreateBlock(round uint64, prev ID) (b *Block) {
+//Mint a new block on the provided tip and round by putting up the identities stake
+func (idn *Identity) Mint(round uint64, prev ID) (b *Block) {
 	idn.mu.RLock()
 	defer idn.mu.RUnlock()
 	b = &Block{Round: round, Prev: prev}

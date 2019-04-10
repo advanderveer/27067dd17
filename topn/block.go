@@ -8,6 +8,11 @@ import (
 	"math/big"
 )
 
+var (
+	//NilID is an empty ID
+	NilID = ID{}
+)
+
 //ID uniquely identifies a block
 type ID [sha256.Size]byte
 

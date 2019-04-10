@@ -12,7 +12,7 @@ func TestVoteCreation(t *testing.T) {
 	idn1 := topn.NewIdentity([]byte{0x01})
 	id1 := topn.ID{}
 	id1[0] = 0x02
-	b1 := idn1.CreateBlock(1, id1)
+	b1 := idn1.Mint(1, id1)
 
 	test.Equals(t, "02000000", fmt.Sprintf("%.4x", b1.Prev.Bytes()))
 	test.Equals(t, "1e3d9d3b", fmt.Sprintf("%.4x", b1.Token))

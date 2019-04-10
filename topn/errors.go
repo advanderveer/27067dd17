@@ -15,7 +15,7 @@ var (
 
 	ErrPrevNotExist = errors.New("prev block doesn't exist")
 
-	ErrNonIncreasingRound = errors.New("round not an increment from previous round")
+	ErrNonIncreasingRound = errors.New("round not after prev block's round")
 
 	ErrInvalidToken = errors.New("invalid token")
 

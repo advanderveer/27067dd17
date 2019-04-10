@@ -37,7 +37,7 @@ func TestTxHashing(t *testing.T) {
 
 func TestBlockHashing(t *testing.T) {
 	idn1 := topn.NewIdentity([]byte{0x01})
-	b1 := idn1.CreateBlock(1, bid1)
+	b1 := idn1.Mint(1, bid1)
 	tx1 := &topn.Tx{FromPK: []byte{0x01}, ToPK: []byte{0x02}, Amount: 1}
 	b1.AppendTx(tx1)
 
@@ -66,7 +66,7 @@ func TestBlockHashing(t *testing.T) {
 
 func TestBlockPrinting(t *testing.T) {
 	idn1 := topn.NewIdentity([]byte{0x01})
-	b1 := idn1.CreateBlock(1, bid1)
+	b1 := idn1.Mint(1, bid1)
 	test.Equals(t, "1-9f426a5e", fmt.Sprint(b1))
 
 	b1.Round = 2
@@ -75,7 +75,7 @@ func TestBlockPrinting(t *testing.T) {
 
 func TestBlockRanking(t *testing.T) {
 	idn1 := topn.NewIdentity([]byte{0x01})
-	b1 := idn1.CreateBlock(1, bid1)
+	b1 := idn1.Mint(1, bid1)
 
 	test.Equals(t, "0", b1.Rank(0).Text(10)) //should equal exactly 0
 	test.Equals(t, "21135040306902344126042764464942834682251382364299118602526470152441247899096", b1.Rank(1).Text(10))

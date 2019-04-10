@@ -113,18 +113,13 @@ func (c *Chain) read(id ID) (b *Block, weight uint64) {
 	return rb.block, c.weights[id]
 }
 
-// Mint a new block at the current tip and round by putting up the
-// identity's current balance as stake.
-func (c *Chain) Mint(idn *Identity) (b *Block) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return idn.CreateBlock(c.curr, c.tip)
-}
-
 // Append a block to the chain.
 func (c *Chain) Append(b *Block) (ok bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// @TODO (security) we need an signature that covers the whole block else
+	// anyone relaying could simply change the block before passing it on
 
 	//check vrf token and proof first
 	if !vrf.Verify(b.PK[:], b.Prev[:], b.Token, b.Proof) {
@@ -220,8 +215,10 @@ func (c *Chain) Append(b *Block) (ok bool, err error) {
 			//re-assing sumweight
 			c.weights[id] = sumw
 
-			//if sum-weight heigher then current tip sum-weight. replace tip
-			if sumw > c.tipw {
+			//if sum-weight heigher or equal the the current tip sum-weight use that
+			//as the new tip. By also replacing on equal we prefer newly calculated
+			//weights over the old maximum
+			if sumw >= c.tipw {
 				c.tip = id
 				c.tipw = sumw
 			}

@@ -18,7 +18,7 @@ func TestRoundAdding(t *testing.T) {
 	bid3[0] = 0x03
 
 	idn1 := NewIdentity([]byte{0x01})
-	b1 := idn1.CreateBlock(1, bid1)
+	b1 := idn1.Mint(1, bid1)
 
 	r1 := newRound()
 	r1.Set(b1.Hash(), b1, b1.Rank(1))
@@ -29,8 +29,8 @@ func TestRoundAdding(t *testing.T) {
 	test.Equals(t, true, r1.SawIdentity(b1.PK))
 	test.Equals(t, false, r1.SawIdentity(PK{}))
 
-	b2 := idn1.CreateBlock(1, bid2)
-	b3 := idn1.CreateBlock(1, bid3)
+	b2 := idn1.Mint(1, bid2)
+	b3 := idn1.Mint(1, bid3)
 	r1.Set(b2.Hash(), b2, b2.Rank(1))
 	r1.Set(b3.Hash(), b3, b3.Rank(1))
 
