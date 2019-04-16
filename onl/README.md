@@ -122,7 +122,7 @@ _ _How to deal with a large pool of leave ops?_ When a member times out, many ot
   members may send in leave requests which are unnessary. Just add it as part of the
   block submission.
 _ _Can we snapshot the history?_
-_ _Can we create kv abstraction where "_balance" is a special system key?
+_ _Can we create kv abstraction where "_balance" is a special system key?_
 
 ## Resources
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193
