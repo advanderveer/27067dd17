@@ -18,16 +18,22 @@ type ID [sha256.Size]byte
 //Bytes returns the underlying bytes as a slice
 func (id ID) Bytes() []byte { return id[:] }
 
+//Round number that is encoded in the ID
+func (id ID) Round() uint64 {
+	return binary.BigEndian.Uint64(id[:])
+}
+
 //Block holds the data that is send between members to reach consensus. Each
 //block is assigned to a round based on its timestamp, ranked using a VRF token
 //and linked together to form a chain.
 type Block struct {
 
-	// Microseconds since unix epoch at which this block was made, measured on
-	// the (untrused) proposer's clock. Using a modulus operation this timestamp
-	// is used to determine in which round the block will be observed. We hope that
-	// microsecond precision will be usefull once network and clock syncing technology
-	// becomes better
+	// The Round at which the proposer has chosen to placed this block.
+	Round uint64
+
+	// Microseconds since unix epoch at which this block was made. It was measured
+	// (or chosen) on the untrused clock of the proposer's. We hope that microsecond
+	// precision will be usefull once network and clock syncing technology become better
 	Timestamp uint64
 
 	// The verifiable random token that determines (together with stake)
@@ -71,6 +77,8 @@ type Block struct {
 func (b *Block) Hash() (id ID) {
 	tsb := make([]byte, 8)
 	binary.BigEndian.PutUint64(tsb, b.Timestamp)
+	roundb := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundb, b.Round)
 
 	//encode transaction hashes in the id
 	var opshs [][]byte
@@ -79,6 +87,7 @@ func (b *Block) Hash() (id ID) {
 		opshs = append(opshs, opsh[:])
 	}
 
+	//hash the fields and the ops
 	id = ID(sha256.Sum256(bytes.Join([][]byte{
 		b.FinalizedPrev.Bytes(),
 		b.Prev.Bytes(),
@@ -86,39 +95,37 @@ func (b *Block) Hash() (id ID) {
 		b.Proof,
 		b.Token,
 		tsb,
+		roundb,
 		bytes.Join(opshs, nil),
 	}, nil)))
 
+	//prefix the ID with the round, allows round based sorting in the store
+	//@TODO (security) what does this the collission resistance 4,7e21 do to security
+	copy(id[:8], roundb)
 	return
 }
 
-//VRFSeed returns the input for the verifiable random token
-func (b *Block) VRFSeed(rt uint64) []byte {
+//Seed returns the input for the verifiable random token. The token (and the thus
+//the blocks ranking) is dependant on this seed.
+func (b *Block) Seed() []byte {
 	seed := b.FinalizedPrev[:]      //brings long-term uncertainty about a pk's worth
-	seed = append(seed, b.PK[:]...) //the pk that the proposer must have committed to
-	roundb := make([]byte, 8)       //round nr as the epoc dividd by the round time
+	seed = append(seed, b.PK[:]...) //the pk of the proposer
 
-	binary.BigEndian.PutUint64(roundb, b.Timestamp/rt)
+	roundb := make([]byte, 8) //round nr as the epoc dividd by the round time
+	binary.BigEndian.PutUint64(roundb, b.Round)
 	seed = append(seed, roundb...)
 	return seed
 }
 
-//VerifyCrypto will verify the cryptographic elements of the block. The TokenPK is
-//not included in the message but must have been pre-committed when the stake deposit
-//was placed.
-func (b *Block) VerifyCrypto(tokenPK []byte, rt uint64) (ok bool, err error) {
+//VerifySignature will check the block's signature
+func (b *Block) VerifySignature() (ok bool) {
 	pk := [32]byte(b.PK)
-	ok = ed25519.Verify(&pk, b.Hash().Bytes(), &b.Signature)
-	if !ok {
-		return false, ErrInvalidSignature
-	}
+	return ed25519.Verify(&pk, b.Hash().Bytes(), &b.Signature)
+}
 
-	ok = vrf.Verify(tokenPK, b.VRFSeed(rt), b.Token, b.Proof)
-	if !ok {
-		return false, ErrInvalidToken
-	}
-
-	return true, nil
+//VerifyToken will verify the random function token
+func (b *Block) VerifyToken(tokenPK []byte) (ok bool) {
+	return vrf.Verify(tokenPK, b.Seed(), b.Token, b.Proof)
 }
 
 //AppendOps will append operations the the block it doesn't check if for duplicates

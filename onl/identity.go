@@ -76,19 +76,17 @@ func (idn *Identity) Sign(b *Block) {
 	b.Signature = *(ed25519.Sign(idn.signSK, b.Hash().Bytes()))
 }
 
-//Mint a new block on the provided tip and round by putting up the identities stake
-func (idn *Identity) Mint(c Clock, rt uint64, prev, fPrev ID) (b *Block) {
+//Mint a new block for the provided (finalized) tip and round. Other will only
+//accept it if prior to this block some stake has been put up by the proposing
+//identity
+func (idn *Identity) Mint(c Clock, prev, fPrev ID, round uint64) (b *Block) {
 	idn.mu.RLock()
 	defer idn.mu.RUnlock()
 
-	b = &Block{Timestamp: c.ReadUs(), Prev: prev, FinalizedPrev: fPrev}
+	b = &Block{Round: round, Timestamp: c.ReadUs(), Prev: prev, FinalizedPrev: fPrev}
 	copy(b.PK[:], (*idn.signPK)[:])
 
-	//identities are allowed to mint exactly one block per round but is randomized
-	//by referencing the hash of the last finalized block. When announcing participation
-	//each identity commits to a single sign PK that must be used for vrf generation
-
-	b.Token, b.Proof = vrf.Prove(b.VRFSeed(rt), idn.vrfSK)
+	b.Token, b.Proof = vrf.Prove(b.Seed(), idn.vrfSK)
 	return
 }
 
