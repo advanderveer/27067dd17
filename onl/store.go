@@ -16,6 +16,9 @@ type Stakes struct {
 	//@TODO add fields
 }
 
+//HasMajority returns whether the stakes represent a majority of stakes
+func (stk *Stakes) HasMajority() bool { return false }
+
 //Store stores blocks
 type Store interface {
 	CreateTx(writable bool) Tx

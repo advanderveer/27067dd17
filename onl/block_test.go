@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/advanderveer/27067dd17/onl"
+	"github.com/advanderveer/27067dd17/onl/ssi"
 	"github.com/advanderveer/go-test"
 )
 
@@ -28,35 +29,35 @@ func TestBlockHashing(t *testing.T) {
 	idn1 := onl.NewIdentity([]byte{0x01})
 
 	b1 := idn1.Mint(c1, bid1, bid2, 1)
-	b1.AppendOps(idn1.Join(1))
-	test.Equals(t, "00000000000000015a259acd", fmt.Sprintf("%.12x", b1.Hash()))
+	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
+	test.Equals(t, "0000000000000001ab30a254", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
 
 	//expect the hash to change on every field manipulation
 	b1.FinalizedPrev[0] = 0x01
-	test.Equals(t, "000000000000000182887e46", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "000000000000000109961974", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Prev[0] = 0x02
-	test.Equals(t, "000000000000000157c2d528", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001ee4b94b9", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.PK[0] = 0x01
-	test.Equals(t, "0000000000000001388021a7", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "000000000000000117352713", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Proof[0] = 0x01
-	test.Equals(t, "00000000000000010b3d8f30", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "00000000000000015a79c45e", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Token[0] = 0x01
-	test.Equals(t, "0000000000000001d8831006", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001ca5215a7", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Timestamp += 1
-	test.Equals(t, "00000000000000015b946ef8", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001091060cb", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Round = 100
-	test.Equals(t, "000000000000006437a0c978", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000064db7b1249", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(100), b1.Hash().Round())
 
-	b1.AppendOps(idn1.Join(2))
-	test.Equals(t, "0000000000000064042e268c", fmt.Sprintf("%.12x", b1.Hash()))
+	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
+	test.Equals(t, "0000000000000064b451f880", fmt.Sprintf("%.12x", b1.Hash()))
 }
 
 func TestBlockMintingSigningVerification(t *testing.T) {

@@ -89,14 +89,3 @@ func (idn *Identity) Mint(c Clock, prev, fPrev ID, round uint64) (b *Block) {
 	b.Token, b.Proof = vrf.Prove(b.Seed(), idn.vrfSK)
 	return
 }
-
-//Join will create a join operation that can be broadcasted to indicate this
-//identity would like to participate in the protocol
-func (idn *Identity) Join(deposit uint64) (op *JoinOp) {
-	op = &JoinOp{Deposit: deposit}
-	copy(op.TokenPK[:], idn.vrfPK)
-	copy(op.Identity[:], (*idn.signPK)[:])
-	op.Signature = *(ed25519.Sign(idn.signSK, op.Hash().Bytes()))
-
-	return
-}

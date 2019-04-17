@@ -67,10 +67,10 @@ type Block struct {
 	//used to that the block's data hasn't been tampered with.
 	Signature [ed25519.SignatureSize]byte
 
-	//The operations that this identity proposes to the network, in this order.
+	//The writes that this identity proposes to the network in this order.
 	//other identities will vote on this block by referencing it and strenghen
-	//the networks believe in the ops being correct in this order.
-	Ops []Op
+	//the networks believe.
+	Writes []*Write
 }
 
 // Hash the block returning an unique identifier
@@ -81,10 +81,10 @@ func (b *Block) Hash() (id ID) {
 	binary.BigEndian.PutUint64(roundb, b.Round)
 
 	//encode transaction hashes in the id
-	var opshs [][]byte
-	for _, ops := range b.Ops {
-		opsh := ops.Hash()
-		opshs = append(opshs, opsh[:])
+	var wrshs [][]byte
+	for _, wr := range b.Writes {
+		wrsh := wr.Hash()
+		wrshs = append(wrshs, wrsh[:])
 	}
 
 	//hash the fields and the ops
@@ -96,7 +96,7 @@ func (b *Block) Hash() (id ID) {
 		b.Token,
 		tsb,
 		roundb,
-		bytes.Join(opshs, nil),
+		bytes.Join(wrshs, nil),
 	}, nil)))
 
 	//prefix the ID with the round, allows round based sorting in the store
@@ -128,9 +128,9 @@ func (b *Block) VerifyToken(tokenPK []byte) (ok bool) {
 	return vrf.Verify(tokenPK, b.Seed(), b.Token, b.Proof)
 }
 
-//AppendOps will append operations the the block it doesn't check if for duplicates
-func (b *Block) AppendOps(ops ...Op) {
-	for _, op := range ops {
-		b.Ops = append(b.Ops, op)
+//Append will append operations the the block it doesn't check if for duplicates
+func (b *Block) Append(ws ...*Write) {
+	for _, w := range ws {
+		b.Writes = append(b.Writes, w)
 	}
 }

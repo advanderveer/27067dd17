@@ -121,7 +121,11 @@ _ _Add more incentive to check blocks before submitting?_ there is currently lit
 _ _How to deal with a large pool of leave ops?_ When a member times out, many other
   members may send in leave requests which are unnessary. Just add it as part of the
   block submission.
-_ _Can we snapshot the history?_
+_ _Can we snapshot the history?_ This page describes some solutions for bitcoin
+  all the way at the bottom: https://eklitzke.org/an-overview-of-bitcoin-utxos.
+   - Merkle Sets: https://diyhpl.us/wiki/transcripts/sf-bitcoin-meetup/2017-07-08-bram-cohen-merkle-sets/
+   - Crypographic Accumulators: https://en.wikipedia.org/wiki/Accumulator_(cryptography)
+   - Mimble Wimble: http://diyhpl.us/wiki/transcripts/scalingbitcoin/milan/mimblewimble/
 _ _Can we create kv abstraction where "_balance" is a special system key?_
 
 ## Resources
