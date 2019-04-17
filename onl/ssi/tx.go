@@ -41,7 +41,10 @@ func (tx *Tx) Get(k []byte) []byte {
 	return vraw.([]byte)
 }
 
+//Data returns the underlying data, suitable for transport
+func (tx *Tx) Data() *TxData { return tx.data }
+
 //Commit the transaction
 func (tx *Tx) Commit() error {
-	return tx.c.Commit(tx.data)
+	return tx.c.Commit(tx.Data())
 }

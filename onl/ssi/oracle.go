@@ -3,14 +3,14 @@ package ssi
 //Oracle represents the status oracle in "A critique of snapshot isolation" [M Yabandeh, 2012]
 type Oracle struct {
 	time    uint64
-	commits map[uint64]uint64
+	commits map[KH]uint64
 }
 
 //NewOracle creates the status oracle
 func NewOracle() *Oracle {
 	return &Oracle{
 		time:    1,
-		commits: make(map[uint64]uint64),
+		commits: make(map[KH]uint64),
 	}
 }
 
