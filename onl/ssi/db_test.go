@@ -45,6 +45,14 @@ func TestBasicDataStorage(t *testing.T) {
 	test.Equals(t, []byte(nil), tx2.Get([]byte("bob")))
 }
 
+func TestDryRun(t *testing.T) {
+	db := NewDB()
+	tx := db.NewTx()
+
+	tx.Set([]byte("alex"), []byte{0x01})
+	test.Ok(t, db.Commit(tx.Data(), true))
+}
+
 func TestReadWriteConflict(t *testing.T) {
 
 	db := NewDB()
@@ -57,6 +65,14 @@ func TestReadWriteConflict(t *testing.T) {
 	tx2.Get([]byte("bob")) //read from other tx's write
 	tx2.Set([]byte("alex"), int64b(1))
 
-	test.Ok(t, tx1.Commit())
-	test.Equals(t, ErrConflict, tx2.Commit())
+	test.Ok(t, db.Commit(tx1.Data(), true)) //dry run, should not commit data
+	tx3 := db.NewTx()
+	test.Equals(t, []byte(nil), tx3.Get([]byte("bob")))
+
+	test.Ok(t, db.Commit(tx1.Data(), false)) //no dry run, should commit data for reading
+	tx4 := db.NewTx()
+	test.Equals(t, int64b(1), tx4.Get([]byte("bob"))) //should have been committed
+
+	//tx2 should not commit with dry run
+	test.Equals(t, ErrConflict, db.Commit(tx2.Data(), true))
 }

@@ -75,7 +75,7 @@ func (b *Bank) TransferFunds(amount int64, from, to string) (err error) {
 		return fmt.Errorf("failed to decode: %v", err)
 	}
 
-	return b.db.Commit(txd)
+	return b.db.Commit(txd, false)
 }
 
 //CurrentBalance returns the current  balance of an account

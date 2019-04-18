@@ -12,18 +12,36 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	s1, clean := onl.TempBadgerStore()
 	defer clean()
 
-	c1, gen1 := onl.NewChain(s1)
+	st1, err := onl.NewState(nil)
+	test.Ok(t, err)
+	w1 := st1.Update(func(*onl.KV) { /* empty should be ignored */ })
+	w2 := st1.Update(func(kv *onl.KV) {
+		kv.Set([]byte{0x01}, []byte{0x02})
+	})
+
+	c1, gen1 := onl.NewChain(s1, w1, w2)
 	g1 := c1.Genesis()
 	test.Equals(t, gen1, g1.Hash())
 
-	c2, gen2 := onl.NewChain(s1)
-	g2 := c2.Genesis()
-	test.Equals(t, gen2, g1.Hash())
+	t.Run("read genesis state", func(t *testing.T) {
+		st2, err := c1.State(gen1)
+		test.Ok(t, err)
 
-	test.Equals(t, uint64(0), g2.Round)
-	test.Equals(t, []byte("vi veri veniversum vivus vici"), g2.Token)
+		st2.Read(func(kv *onl.KV) {
+			test.Equals(t, []byte{0x02}, kv.Get([]byte{0x01}))
+		})
+	})
 
-	test.Equals(t, g2, g1)
+	t.Run("re-apply to second chain", func(t *testing.T) {
+		c2, gen2 := onl.NewChain(s1)
+		g2 := c2.Genesis()
+		test.Equals(t, gen2, g1.Hash())
+
+		test.Equals(t, uint64(0), g2.Round)
+		test.Equals(t, []byte("vi veri veniversum vivus vici"), g2.Token)
+		test.Equals(t, g2, g1)
+		test.Equals(t, 1, len(g2.Writes))
+	})
 }
 
 func TestChainAppendingAndWalking(t *testing.T) {
@@ -36,16 +54,12 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	b1 := idn1.Mint(testClock(1), g1, g1, 1)
 	idn1.Sign(b1)
 
-	_, err := c1.Append(b1)
-	test.Ok(t, err)
-	//@TODO assert new chain state
+	test.Ok(t, c1.Append(b1))
 
 	b2 := idn1.Mint(testClock(1), b1.Hash(), g1, 1)
 	idn1.Sign(b2)
 
-	_, err = c1.Append(b2)
-	test.Ok(t, err)
-	//@TODO assert new chain state
+	test.Ok(t, c1.Append(b2))
 
 	t.Run("should walk backwards in correct order", func(t *testing.T) {
 		var seen []onl.ID

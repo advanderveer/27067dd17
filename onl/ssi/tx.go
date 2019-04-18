@@ -6,7 +6,7 @@ import (
 
 //Committer is the entity that can commit using just the transportable tx data
 type Committer interface {
-	Commit(txd *TxData) (err error)
+	Commit(txd *TxData, dry bool) (err error)
 }
 
 //TxData holds the transportable portion of the transaction
@@ -46,5 +46,5 @@ func (tx *Tx) Data() *TxData { return tx.data }
 
 //Commit the transaction
 func (tx *Tx) Commit() error {
-	return tx.c.Commit(tx.Data())
+	return tx.c.Commit(tx.Data(), false)
 }

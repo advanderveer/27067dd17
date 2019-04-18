@@ -22,7 +22,7 @@ func NewState(log [][]*Write) (s *State, err error) {
 
 	for _, ws := range log {
 		for _, w := range ws {
-			err = s.Apply(w)
+			err = s.Apply(w, false)
 			if err != nil {
 				return nil, err
 			}
@@ -33,9 +33,10 @@ func NewState(log [][]*Write) (s *State, err error) {
 }
 
 //Apply will try to perform the write while making sure no other reads have been
-//performed concurrently
-func (s *State) Apply(w *Write) (err error) {
-	err = s.db.Commit(w.TxData)
+//performed concurrently. It can be applied in a dry run, which only pretends that
+//the data would be added but isn't actually.
+func (s *State) Apply(w *Write, dry bool) (err error) {
+	err = s.db.Commit(w.TxData, dry)
 	if err == ssi.ErrConflict {
 		return ErrApplyConflict
 	}
@@ -58,5 +59,9 @@ func (s *State) Update(f func(kv *KV)) (w *Write) {
 	tx := s.db.NewTx()
 	f(&KV{tx})
 	w = &Write{TxData: tx.Data()}
+	if len(w.TxData.WriteRows) < 1 {
+		return nil //no write rows means an empty op, make it nil
+	}
+
 	return
 }

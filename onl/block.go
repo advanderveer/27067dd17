@@ -131,6 +131,10 @@ func (b *Block) VerifyToken(tokenPK []byte) (ok bool) {
 //Append will append operations the the block it doesn't check if for duplicates
 func (b *Block) Append(ws ...*Write) {
 	for _, w := range ws {
+		if w == nil {
+			continue
+		}
+
 		b.Writes = append(b.Writes, w)
 	}
 }

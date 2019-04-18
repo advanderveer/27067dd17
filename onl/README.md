@@ -127,6 +127,8 @@ _ _Can we snapshot the history?_ This page describes some solutions for bitcoin
    - Crypographic Accumulators: https://en.wikipedia.org/wiki/Accumulator_(cryptography)
    - Mimble Wimble: http://diyhpl.us/wiki/transcripts/scalingbitcoin/milan/mimblewimble/
 _ _Can we create kv abstraction where "_balance" is a special system key?_
+- _Can there be multiple blocks in each round with a majority stake (be finalized?)_ 
+
 
 ## Resources
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193

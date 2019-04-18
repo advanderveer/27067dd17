@@ -15,7 +15,7 @@ type Chain struct {
 }
 
 //NewChain creates a new Chain
-func NewChain(s Store) (c *Chain, gen ID) {
+func NewChain(s Store, ws ...*Write) (c *Chain, gen ID) {
 	c = &Chain{store: s}
 
 	//try to read genesis
@@ -37,6 +37,7 @@ func NewChain(s Store) (c *Chain, gen ID) {
 	//if no genesis could be read, create
 	if c.genesis.Block == nil {
 		c.genesis.Block = &Block{Token: []byte("vi veri veniversum vivus vici")}
+		c.genesis.Block.Append(ws...)
 
 		c.genesis.Stakes = &Stakes{} //@TODO finalize block
 		if err := tx.Write(c.genesis.Block, c.genesis.Stakes); err != nil {
@@ -54,6 +55,29 @@ func NewChain(s Store) (c *Chain, gen ID) {
 
 //Genesis returns the genesis block
 func (c *Chain) Genesis() (b *Block) { return c.genesis.Block }
+
+// State returns the state represented by the chain walking back to the genesis
+func (c *Chain) State(id ID) (s *State, err error) {
+
+	//@TODO (optimization) we would like to keep a cache of the state on the longest
+	//finalized chain
+
+	tx := c.store.CreateTx(false)
+	defer tx.Discard()
+	return c.state(tx, id)
+}
+
+func (c *Chain) state(tx Tx, id ID) (s *State, err error) {
+	var log [][]*Write
+	if err = c.walk(tx, id, func(id ID, bb *Block, stk *Stakes) error {
+		log = append([][]*Write{bb.Writes}, log...)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return NewState(log)
+}
 
 // Walk a chain from 'id' towards the genesis.
 func (c *Chain) Walk(id ID, f func(id ID, b *Block, stk *Stakes) error) (err error) {
@@ -87,16 +111,16 @@ func (c *Chain) walk(tx Tx, id ID, f func(id ID, b *Block, stk *Stakes) error) (
 // will fork. Block may be appended long after they have been created, either
 // because they took a long time to traverse the network or because it was
 // delivered via another channel to sync up the this chain.
-func (c *Chain) Append(b *Block) (s *State, err error) {
+func (c *Chain) Append(b *Block) (err error) {
 
 	// check signature, make sure it hasn't been tampered with since signed
 	if !b.VerifySignature() {
-		return nil, ErrInvalidSignature
+		return ErrInvalidSignature
 	}
 
 	// make sure round is > 0
 	if b.Round < 1 {
-		return nil, ErrZeroRound
+		return ErrZeroRound
 	}
 
 	// open our store tx
@@ -107,7 +131,7 @@ func (c *Chain) Append(b *Block) (s *State, err error) {
 	id := b.Hash()
 	_, _, err = tx.Read(id)
 	if err != ErrBlockNotExist {
-		return nil, ErrBlockExist
+		return ErrBlockExist
 	}
 
 	// prev blocks
@@ -117,7 +141,6 @@ func (c *Chain) Append(b *Block) (s *State, err error) {
 	)
 
 	// walk prev chain while storing all blocks up to the genesis a log
-	var log [][]*Write
 	if err = c.walk(tx, b.Prev, func(id ID, bb *Block, stk *Stakes) error {
 		if b.Prev == id {
 			prev = bb
@@ -134,39 +157,36 @@ func (c *Chain) Append(b *Block) (s *State, err error) {
 			fprev = bb
 		}
 
-		// prepend to the log
-		// @TODO only prepend for log if it has majority stake
-		log = append([][]*Write{bb.Writes}, log...)
-
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("failed to walk prev chain: %v", err)
+		return fmt.Errorf("failed to walk prev chain: %v", err)
 	}
 
 	// fprev must exist in the prev chain
 	if fprev == nil {
-		return nil, ErrFinalizedPrevNotInChain
+		return ErrFinalizedPrevNotInChain
 	}
 
-	//reconstruct the state from the log
-	state, err := NewState(log)
+	//reconstruct the state
+	//@TODO we're walking again here but we would like to re-use our code also
+	state, err := c.state(tx, b.Prev)
 	if err != nil {
-		return nil, ErrStateReconstruction
+		return ErrStateReconstruction
 	}
 
-	//[MAJOR] read dynamic info from the prev chain
-	// - update finalization info
-	// - read roundtime
-	// - read stake from chain
-	// - read vrf pk that was committed (if any)
-	// - read the vrf threshold (if any)
+	//read dynamic data from rebuild state
+	state.Read(func(kv *KV) {
+		// - read roundtime
+		// - read stake from chain
+		// - read vrf pk that was committed (if any)
+		// - read the vrf threshold (if any)
+	})
 
-	//validate each write in the block by applying them
-	//@TODO instead, try to apply them with any new finalized blocks applied also
+	//validate each write in the block by applying them in a dry-run
 	for _, w := range b.Writes {
-		err = state.Apply(w)
+		err = state.Apply(w, true)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -192,7 +212,7 @@ func (c *Chain) Append(b *Block) (s *State, err error) {
 	// write the actual block
 	err = tx.Write(b, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write block: %v", err)
+		return fmt.Errorf("failed to write block: %v", err)
 	}
 
 	// check if the round nr makes sense (together with timestamp?) what happens if
@@ -210,5 +230,5 @@ func (c *Chain) Append(b *Block) (s *State, err error) {
 	// - keep new finalized tip as chainstate cache
 	// - apply newly finalized blocks
 
-	return state, tx.Commit()
+	return tx.Commit()
 }

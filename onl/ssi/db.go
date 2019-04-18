@@ -49,9 +49,11 @@ func NewDB() (db *DB) {
 					break
 				}
 
-				//no conflict, go ahead and write changes to the store
-				for _, change := range req.rw {
-					db.store, _, _ = db.store.Insert(change.K, change.V) //write actual changes for new reads
+				//no conflict, if its not a dry run, go ahead and write changes to the store
+				if !req.dry {
+					for _, change := range req.rw {
+						db.store, _, _ = db.store.Insert(change.K, change.V) //write actual changes for new reads
+					}
 				}
 
 				req.tc <- tc
@@ -70,16 +72,17 @@ func (db *DB) NewTx() *Tx {
 }
 
 //Commit a transaction with just it's data portion.
-func (db *DB) Commit(txd *TxData) (err error) {
+func (db *DB) Commit(txd *TxData, dry bool) (err error) {
 	if len(txd.WriteRows) < 1 {
 		return nil //nothing to commit
 	}
 
 	req := &commitReq{
-		tc: make(chan uint64),
-		rr: txd.ReadRows,
-		rw: txd.WriteRows,
-		ts: txd.TimeStart,
+		dry: dry,
+		tc:  make(chan uint64),
+		rr:  txd.ReadRows,
+		rw:  txd.WriteRows,
+		ts:  txd.TimeStart,
 	}
 
 	db.commitReqs <- req
@@ -98,8 +101,9 @@ type txReq struct {
 
 //commitReq is send when a user wants to commit a transaction
 type commitReq struct {
-	rw KeyChangeSet
-	rr KeySet
+	dry bool
+	rw  KeyChangeSet
+	rr  KeySet
 
 	ts uint64
 	tc chan uint64
