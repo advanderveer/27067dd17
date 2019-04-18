@@ -60,6 +60,22 @@ func TestBlockHashing(t *testing.T) {
 	test.Equals(t, "0000000000000064a51ff1c1", fmt.Sprintf("%.12x", b1.Hash()))
 }
 
+func TestConsistentWritesHashing(t *testing.T) {
+	idn1 := onl.NewIdentity([]byte{0x01})
+	st1, err := onl.NewState(nil)
+	test.Ok(t, err)
+	w1 := st1.Update(func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn1.PK(), 1)             //mint 1 current
+		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK()) //then deposit it
+	})
+
+	b1 := idn1.Mint(testClock(1), bid1, bid1, 1)
+	b1.Append(w1)
+	for i := 0; i < 100; i++ { //should hash consistently
+		test.Equals(t, b1.Hash(), b1.Hash())
+	}
+}
+
 func TestBlockMintingSigningVerification(t *testing.T) {
 	c1 := testClock(1)
 	idn1 := onl.NewIdentity([]byte{0x01})

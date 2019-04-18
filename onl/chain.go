@@ -1,6 +1,8 @@
 package onl
 
-import "fmt"
+import (
+	"fmt"
+)
 
 //Chain links blocks together and reaches consensus by keeping the chain with
 //the most weight
@@ -87,6 +89,9 @@ func (c *Chain) Walk(id ID, f func(id ID, b *Block, stk *Stakes) error) (err err
 }
 
 func (c *Chain) walk(tx Tx, id ID, f func(id ID, b *Block, stk *Stakes) error) (err error) {
+
+	//@TODO (optimization) would it be possible to do a key only walk on the lsm index
+
 	for {
 		b, stk, err := tx.Read(id)
 		if err != nil {
@@ -175,12 +180,23 @@ func (c *Chain) Append(b *Block) (err error) {
 	}
 
 	//read dynamic data from rebuild state
+	var stake uint64
+	var tpk []byte
 	state.Read(func(kv *KV) {
-		// - read roundtime
-		// - read stake from chain
-		// - read vrf pk that was committed (if any)
-		// - read the vrf threshold (if any)
+		stake, tpk = kv.ReadStake(b.PK)
+		// @TODO read roundtime
+		// @TODO read the vrf threshold (if any)
 	})
+
+	//check if there was any token pk comitted
+	if tpk == nil {
+		return ErrNoTokenPK
+	}
+
+	//validate the token
+	if !b.VerifyToken(tpk) {
+		return ErrInvalidToken
+	}
 
 	//validate each write in the block by applying them in a dry-run
 	for _, w := range b.Writes {
@@ -218,10 +234,13 @@ func (c *Chain) Append(b *Block) (err error) {
 	// check if the round nr makes sense (together with timestamp?) what happens if
 	// a very high round nr is proposed with a very recent timestamp (prev+1)
 
+	_ = stake
 	// [MAJOR] re-rank the block in its round
 	// - (requires) take and vrf pk to be read from chain
 	// re-calculate all weights from this round up to the latest
 	// - determine new tip
+	// - re assign sum weights
+	// - we don' need to rank re-sort the whole round
 
 	// [MAJOR] distribute stake to all ancestors for finalization
 	// - (requires stake) to be read from chain

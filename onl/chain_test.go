@@ -45,11 +45,17 @@ func TestChainCreationAndGenesis(t *testing.T) {
 }
 
 func TestChainAppendingAndWalking(t *testing.T) {
+	idn1 := onl.NewIdentity([]byte{0x01})
 	s1, clean := onl.TempBadgerStore()
 	defer clean()
 
-	c1, g1 := onl.NewChain(s1)
-	idn1 := onl.NewIdentity([]byte{0x01})
+	st1, err := onl.NewState(nil)
+	test.Ok(t, err)
+
+	c1, g1 := onl.NewChain(s1, st1.Update(func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn1.PK(), 1)             //mint 1 currency
+		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK()) //then deposit it
+	}))
 
 	b1 := idn1.Mint(testClock(1), g1, g1, 1)
 	idn1.Sign(b1)
@@ -81,25 +87,4 @@ func TestChainAppendingAndWalking(t *testing.T) {
 			return errt
 		}))
 	})
-}
-
-func TestChainGenesisWitchStakeDeposit(t *testing.T) {
-	s1, clean := onl.TempBadgerStore()
-	defer clean()
-
-	st1, _ := onl.NewState(nil)
-	w1 := st1.Update(func(kv *onl.KV) {
-		//write coinbase amount
-
-		//try to read it right away
-
-		//deposit currency as stake
-
-		//read the deposity
-
-	})
-
-	c1, _ := onl.NewChain(s1, w1)
-
-	_ = c1
 }

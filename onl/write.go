@@ -1,8 +1,10 @@
 package onl
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"sort"
 
 	"github.com/advanderveer/27067dd17/onl/ssi"
 )
@@ -24,14 +26,34 @@ func (op *Write) Hash() (id WID) {
 	binary.Write(h, binary.BigEndian, op.TimeStart)
 	binary.Write(h, binary.BigEndian, op.TimeCommit)
 
+	//read rows, sorted
+	rr := make([]ssi.KH, 0, len(op.ReadRows))
 	for k := range op.ReadRows {
+		rr = append(rr, k)
+	}
+
+	sort.Slice(rr, func(i, j int) bool {
+		return bytes.Compare(rr[i][:], rr[j][:]) < 0
+	})
+
+	for _, k := range rr {
 		binary.Write(h, binary.BigEndian, k[:])
 	}
 
-	for kh, kv := range op.WriteRows {
-		binary.Write(h, binary.BigEndian, kh[:])
-		binary.Write(h, binary.BigEndian, kv.K)
-		binary.Write(h, binary.BigEndian, kv.V)
+	//Write rows, sorted
+	wr := make([]ssi.KH, 0, len(op.WriteRows))
+	for k := range op.WriteRows {
+		wr = append(wr, k)
+	}
+
+	sort.Slice(wr, func(i, j int) bool {
+		return bytes.Compare(wr[i][:], wr[j][:]) < 0
+	})
+
+	for _, k := range wr {
+		binary.Write(h, binary.BigEndian, k[:])
+		binary.Write(h, binary.BigEndian, op.WriteRows[k].K)
+		binary.Write(h, binary.BigEndian, op.WriteRows[k].V)
 	}
 
 	copy(id[:], h.Sum(nil))

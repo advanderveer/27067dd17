@@ -11,4 +11,5 @@ var (
 	ErrFinalizedPrevNotInChain = errors.New("finalized prev not in chain")
 	ErrStateReconstruction     = errors.New("failed to reconstruct state")
 	ErrApplyConflict           = errors.New("conflict during apply")
+	ErrNoTokenPK               = errors.New("no token pk committed")
 )
