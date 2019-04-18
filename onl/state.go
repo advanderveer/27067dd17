@@ -6,9 +6,6 @@ import (
 	"github.com/advanderveer/27067dd17/onl/ssi"
 )
 
-//KV abstraction build on top of our block chain
-type KV struct{ *ssi.Tx }
-
 // State represents the data stored in a chain suitable for access in constant-time.
 // It is created by flattening a chain of blocks and applying each operation in
 // total order.
@@ -34,8 +31,21 @@ func NewState(log [][]*Write) (s *State, err error) {
 
 //Apply will try to perform the write while making sure no other reads have been
 //performed concurrently. It can be applied in a dry run, which only pretends that
-//the data would be added but isn't actually.
+//the data would be added but isn't actually. This method is also called in the
+//process of replicating block writes. If apply returns an error it will not be
+//accepted by peers.
 func (s *State) Apply(w *Write, dry bool) (err error) {
+	if w == nil {
+		return //nil writes can happen if update calls result in zero writes
+	}
+
+	//@TODO validate how keys are written, authentication and authorization
+	//@TODO prevent editing of system keys like "balance" and "stake"
+	//@TODO enforce special rules such as balance not becoming negative
+	//@TODO some operations can only be done in the genesis block
+	//@TODO some operations can only be done with proof of misbehaviour
+	//@TODO validate max key and value lengths
+
 	err = s.db.Commit(w.TxData, dry)
 	if err == ssi.ErrConflict {
 		return ErrApplyConflict
@@ -62,6 +72,8 @@ func (s *State) Update(f func(kv *KV)) (w *Write) {
 	if len(w.TxData.WriteRows) < 1 {
 		return nil //no write rows means an empty op, make it nil
 	}
+
+	//@TODO sign write for a given identity
 
 	return
 }

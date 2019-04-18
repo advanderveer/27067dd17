@@ -30,7 +30,7 @@ func NewIdentity(rndid []byte) (idn *Identity) {
 	if rndid != nil {
 		rb := make([]byte, 64)
 		copy(rb, rndid)
-		copy(rb, rndid)
+		copy(rb[32:], rndid)
 		rndr = bytes.NewReader(rb)
 	}
 
@@ -69,7 +69,7 @@ func (idn *Identity) String() string {
 func (idn *Identity) TokenPK() []byte { return idn.vrfPK }
 
 //PK returns this identities signing key
-func (idn *Identity) PK() []byte { return (*idn.signPK)[:] }
+func (idn *Identity) PK() PK { return (*idn.signPK) }
 
 //Sign the block's id which is the blocks's hash
 func (idn *Identity) Sign(b *Block) {

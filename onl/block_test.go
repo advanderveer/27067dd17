@@ -30,34 +30,34 @@ func TestBlockHashing(t *testing.T) {
 
 	b1 := idn1.Mint(c1, bid1, bid2, 1)
 	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "0000000000000001ab30a254", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001382ab918", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
 
 	//expect the hash to change on every field manipulation
 	b1.FinalizedPrev[0] = 0x01
-	test.Equals(t, "000000000000000109961974", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001e48f6195", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Prev[0] = 0x02
-	test.Equals(t, "0000000000000001ee4b94b9", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001cc06c4ff", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.PK[0] = 0x01
-	test.Equals(t, "000000000000000117352713", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "000000000000000172979cb7", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Proof[0] = 0x01
-	test.Equals(t, "00000000000000015a79c45e", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001bdeab958", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Token[0] = 0x01
-	test.Equals(t, "0000000000000001ca5215a7", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001a7018c85", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Timestamp += 1
-	test.Equals(t, "0000000000000001091060cb", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000001c0a77287", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Round = 100
-	test.Equals(t, "0000000000000064db7b1249", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000064ba226bc6", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(100), b1.Hash().Round())
 
 	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "0000000000000064b451f880", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "0000000000000064a51ff1c1", fmt.Sprintf("%.12x", b1.Hash()))
 }
 
 func TestBlockMintingSigningVerification(t *testing.T) {
@@ -67,7 +67,7 @@ func TestBlockMintingSigningVerification(t *testing.T) {
 	test.Equals(t, false, b1.VerifySignature())
 
 	idn1.Sign(b1)
-	test.Equals(t, "20781440", fmt.Sprintf("%.4x", b1.Signature))
+	test.Equals(t, "b8474890", fmt.Sprintf("%.4x", b1.Signature))
 	test.Equals(t, true, b1.VerifySignature())
 
 	//crypto should verify

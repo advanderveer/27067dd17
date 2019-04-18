@@ -14,8 +14,8 @@ type WID [sha256.Size]byte
 // on each member through the consensus protocol
 type Write struct {
 	*ssi.TxData
-
-	//@TODO add signature data
+	//@TODO add signature data: PK, Signature
+	//@TODO add signer pk to hash
 }
 
 //Hash the operation

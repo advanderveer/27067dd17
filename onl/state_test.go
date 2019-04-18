@@ -11,6 +11,9 @@ func TestBasicStateHandling(t *testing.T) {
 	s1, err := onl.NewState(nil)
 	test.Ok(t, err)
 
+	//nil writes to apply should be no-op
+	test.Ok(t, s1.Apply(nil, false))
+
 	w1 := s1.Update(func(kv *onl.KV) {
 		kv.Set([]byte{0x01}, []byte{0x02})
 	})

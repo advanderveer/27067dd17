@@ -55,12 +55,10 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	idn1.Sign(b1)
 
 	test.Ok(t, c1.Append(b1))
-
 	b2 := idn1.Mint(testClock(1), b1.Hash(), g1, 1)
 	idn1.Sign(b2)
 
 	test.Ok(t, c1.Append(b2))
-
 	t.Run("should walk backwards in correct order", func(t *testing.T) {
 		var seen []onl.ID
 		test.Ok(t, c1.Walk(b2.Hash(), func(id onl.ID, b *onl.Block, stk *onl.Stakes) error {
@@ -83,4 +81,25 @@ func TestChainAppendingAndWalking(t *testing.T) {
 			return errt
 		}))
 	})
+}
+
+func TestChainGenesisWitchStakeDeposit(t *testing.T) {
+	s1, clean := onl.TempBadgerStore()
+	defer clean()
+
+	st1, _ := onl.NewState(nil)
+	w1 := st1.Update(func(kv *onl.KV) {
+		//write coinbase amount
+
+		//try to read it right away
+
+		//deposit currency as stake
+
+		//read the deposity
+
+	})
+
+	c1, _ := onl.NewChain(s1, w1)
+
+	_ = c1
 }
