@@ -75,6 +75,7 @@ func NewChain(s Store, ws ...*Write) (c *Chain, gen ID, err error) {
 	c.tip = c.genesis.id
 
 	//re-run weight calculations for the whole chain
+	//@TODO (optimization) we don't want to do this every time for long chains
 	err = c.weigh(tx, 0)
 	if err != nil {
 		return nil, gen, fmt.Errorf("failed to weigh chain blocks: %v", err)
@@ -261,7 +262,9 @@ func (c *Chain) Append(b *Block) (err error) {
 	}
 
 	// @TODO check if the round nr makes sense (together with timestamp?) what happens if
-	// a very high round nr is proposed with a very recent timestamp (prev+1)
+	// a very high round nr is proposed with a very recent timestamp (prev+1). Others
+	// would check that their timestamp would be after the block, if not they wouldn't
+	// vote on it?
 
 	// write the actual block and rank
 	err = tx.Write(b, nil, rank)
@@ -270,17 +273,22 @@ func (c *Chain) Append(b *Block) (err error) {
 	}
 
 	//re-weigh all rounds upwards
+	//@TODO (optimization) we should call weigh in batches, else the cost of running
+	//it grows super fast with tall rounds
+	//@TODO (optimization) we should allow for a max nr of top blocks per round, past
+	//the total points we hand out per round it it not really effective to rank them anymore
+	//@TODO (optimization) we would like to add this limit using a vrf threshold so
+	//members know they don't even need to send it
 	err = c.weigh(tx, b.Round)
 	if err != nil {
 		return fmt.Errorf("failed to weigh rounds: %v", err)
 	}
 
 	// [MAJOR] distribute stake to all ancestors for finalization
-	// - (requires stake) to be read from chain
-	// - add this blocks proser's stake to each ancestor
-	// - mark any blocks as finalized
-	// - keep new finalized tip as chainstate cache
-	// - apply newly finalized blocks
+	// - figure out what the total stake deposit is for the network
+	// - check if this block provides the majority stake for the prev block
+	// - if so, finalize this block and all blocks before it
+	// - update our current state to this finalized chain
 
 	return tx.Commit()
 }
@@ -290,6 +298,25 @@ func (c *Chain) Tip() ID {
 	c.wmu.RLock()
 	defer c.wmu.RUnlock()
 	return c.tip
+}
+
+//Read a block from the chain
+func (c *Chain) Read(id ID) (b *Block, weight uint64, err error) {
+	tx := c.store.CreateTx(false)
+	defer tx.Discard()
+	b, _, _, err = tx.Read(id)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	c.wmu.RLock()
+	defer c.wmu.RUnlock()
+	w, ok := c.weights[id]
+	if !ok {
+		return nil, 0, ErrNotWeighted
+	}
+
+	return b, w, nil
 }
 
 // Weigh all blocks from the the specified round upwards and change the current

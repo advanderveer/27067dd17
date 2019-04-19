@@ -15,4 +15,5 @@ var (
 	ErrZeroRank                = errors.New("blocks has zero rank")
 	ErrRoundNrNotAfterPrev     = errors.New("round number wasn't after the prev's round number")
 	ErrTimestampNotAfterPrev   = errors.New("timestamp didn't come after prev's timestamp")
+	ErrNotWeighted             = errors.New("block's round is not weighted yet")
 )

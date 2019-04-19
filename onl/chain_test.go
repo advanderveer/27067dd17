@@ -1,6 +1,7 @@
 package onl_test
 
 import (
+	"encoding/binary"
 	"errors"
 	"math/big"
 	"testing"
@@ -98,8 +99,112 @@ func TestChainAppendingAndWalking(t *testing.T) {
 			return errt
 		}))
 	})
+
+	t.Run("reading non-existing should fail", func(t *testing.T) {
+		_, _, err := c1.Read(bid4)
+		test.Equals(t, onl.ErrBlockNotExist, err)
+	})
+
 }
 
-func TestChainWeighing(t *testing.T) {
-	//@TODO test our tip selection algorithm
+func TestRoundWeigh(t *testing.T) {
+	store, clean := onl.TempBadgerStore()
+	defer clean()
+
+	state, err := onl.NewState(nil)
+	test.Ok(t, err)
+
+	idn1 := onl.NewIdentity([]byte{0x01})
+	write1 := state.Update(func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn1.PK(), 1)
+		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
+	})
+
+	idn2 := onl.NewIdentity([]byte{0x03})
+	write2 := state.Update(func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn2.PK(), 1)
+		kv.DepositStake(idn2.PK(), 1, idn2.TokenPK())
+	})
+
+	chain, gen, err := onl.NewChain(store, write1, write2)
+	test.Ok(t, err)
+
+	b0, w0, err := chain.Read(gen)
+	test.Ok(t, err)
+	test.Equals(t, uint64(1000), w0)
+	test.Equals(t, b0, chain.Genesis())
+
+	clock := onl.NewWallClock()
+	b1 := idn1.Mint(clock, gen, gen, 1)
+	idn1.Sign(b1)
+	test.Ok(t, chain.Append(b1))
+
+	b11, w1, err := chain.Read(b1.Hash())
+	test.Ok(t, err)
+	test.Equals(t, uint64(2000), w1)
+	test.Equals(t, b1, b11)
+
+	b2 := idn2.Mint(clock, gen, gen, 1)
+	idn2.Sign(b2)
+	test.Ok(t, chain.Append(b2))
+	test.Equals(t, b2.Hash(), chain.Tip())
+
+	//calling weigh shouldn't change anything
+	test.Ok(t, chain.Weigh(0))
+
+	//block 2 should have over taken the blocks 1 ranking
+	b12, w2, err := chain.Read(b1.Hash())
+	test.Ok(t, err)
+	test.Equals(t, uint64(1500), w2)
+	test.Equals(t, b1, b12)
+
+	b22, w3, err := chain.Read(b2.Hash())
+	test.Ok(t, err)
+	test.Equals(t, uint64(2000), w3)
+	test.Equals(t, b2, b22)
+
+	test.Equals(t, b2.Hash(), chain.Tip())
+}
+
+func tallRound(height int, width uint64, t *testing.T) {
+	store, clean := onl.TempBadgerStore()
+	defer clean()
+
+	state, err := onl.NewState(nil)
+	test.Ok(t, err)
+
+	var idns []*onl.Identity
+	write := state.Update(func(kv *onl.KV) {
+		for i := 0; i < height; i++ {
+			idb := make([]byte, 8)
+			binary.BigEndian.Uint64(idb)
+
+			idn := onl.NewIdentity(idb)
+			kv.CoinbaseTransfer(idn.PK(), 1)            //mint 1 currency
+			kv.DepositStake(idn.PK(), 1, idn.TokenPK()) //then deposit it
+
+			idns = append(idns, idn)
+		}
+	})
+
+	chain, gen, err := onl.NewChain(store, write)
+	test.Ok(t, err)
+
+	clock := onl.NewWallClock()
+	for j := uint64(1); j <= width; j++ {
+		tip := chain.Tip()
+
+		for _, idn := range idns {
+			b := idn.Mint(clock, tip, gen, j)
+			idn.Sign(b)
+
+			//@TODO add operations?
+
+			test.Ok(t, chain.Append(b))
+		}
+	}
+}
+
+func TestWeigh1TallRound(t *testing.T) {
+	tallRound(10, 10, t) //@TODO assert performance, or nr of operations
 }

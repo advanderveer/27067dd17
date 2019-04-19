@@ -116,18 +116,20 @@ condition trasnsactions? https://github.com/perlin-network/life
   blocks and keep it as the average network time. If it always takes a long time
   for a certain member. Since we do no proof of work we don't need to adjust any
   difficulty but instead the limit is propagation speed of majority share blocks.
-_ _Add more incentive to check blocks before submitting?_ there is currently little
+- _Add more incentive to check blocks before submitting?_ there is currently little
   punishment in publishing a block that isn't valid
-_ _How to deal with a large pool of leave ops?_ When a member times out, many other
+- _How to deal with a large pool of leave ops?_ When a member times out, many other
   members may send in leave requests which are unnessary. Just add it as part of the
   block submission.
-_ _Can we snapshot the history?_ This page describes some solutions for bitcoin
+- _Can we snapshot the history?_ This page describes some solutions for bitcoin
   all the way at the bottom: https://eklitzke.org/an-overview-of-bitcoin-utxos.
    - Merkle Sets: https://diyhpl.us/wiki/transcripts/sf-bitcoin-meetup/2017-07-08-bram-cohen-merkle-sets/
    - Crypographic Accumulators: https://en.wikipedia.org/wiki/Accumulator_(cryptography)
    - Mimble Wimble: http://diyhpl.us/wiki/transcripts/scalingbitcoin/milan/mimblewimble/
-_ _Can we create kv abstraction where "_balance" is a special system key?_
-- _Can there be multiple blocks in each round with a majority stake (be finalized?)_ 
+- _Can we create kv abstraction where "_balance" is a special system key?_
+- _Can there be multiple blocks in each round with a majority stake (be finalized?)_
+- _what happens if stake is deposited or released in majority group_ nothing will change
+  it will only affected if the block in it gets finalized
 
 
 ## Resources
