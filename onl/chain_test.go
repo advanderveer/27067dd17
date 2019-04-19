@@ -2,6 +2,7 @@ package onl_test
 
 import (
 	"errors"
+	"math/big"
 	"testing"
 
 	"github.com/advanderveer/27067dd17/onl"
@@ -19,9 +20,12 @@ func TestChainCreationAndGenesis(t *testing.T) {
 		kv.Set([]byte{0x01}, []byte{0x02})
 	})
 
-	c1, gen1 := onl.NewChain(s1, w1, w2)
+	c1, gen1, err := onl.NewChain(s1, w1, w2)
+	test.Ok(t, err)
+
 	g1 := c1.Genesis()
 	test.Equals(t, gen1, g1.Hash())
+	test.Equals(t, gen1, c1.Tip())
 
 	t.Run("read genesis state", func(t *testing.T) {
 		st2, err := c1.State(gen1)
@@ -33,7 +37,9 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	})
 
 	t.Run("re-apply to second chain", func(t *testing.T) {
-		c2, gen2 := onl.NewChain(s1)
+		c2, gen2, err := onl.NewChain(s1)
+		test.Ok(t, err)
+
 		g2 := c2.Genesis()
 		test.Equals(t, gen2, g1.Hash())
 
@@ -52,22 +58,27 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	st1, err := onl.NewState(nil)
 	test.Ok(t, err)
 
-	c1, g1 := onl.NewChain(s1, st1.Update(func(kv *onl.KV) {
+	c1, g1, err := onl.NewChain(s1, st1.Update(func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)             //mint 1 currency
 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK()) //then deposit it
 	}))
+	test.Ok(t, err)
 
 	b1 := idn1.Mint(testClock(1), g1, g1, 1)
 	idn1.Sign(b1)
 
 	test.Ok(t, c1.Append(b1))
-	b2 := idn1.Mint(testClock(1), b1.Hash(), g1, 1)
+	test.Equals(t, b1.Hash(), c1.Tip())
+
+	b2 := idn1.Mint(testClock(2), b1.Hash(), g1, 2)
 	idn1.Sign(b2)
 
 	test.Ok(t, c1.Append(b2))
+	test.Equals(t, b2.Hash(), c1.Tip())
+
 	t.Run("should walk backwards in correct order", func(t *testing.T) {
 		var seen []onl.ID
-		test.Ok(t, c1.Walk(b2.Hash(), func(id onl.ID, b *onl.Block, stk *onl.Stakes) error {
+		test.Ok(t, c1.Walk(b2.Hash(), func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
 			seen = append(seen, id)
 			return nil
 		}))
@@ -76,15 +87,19 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	})
 
 	t.Run("should fail with block not exist", func(t *testing.T) {
-		test.Equals(t, onl.ErrBlockNotExist, c1.Walk(bid2, func(id onl.ID, b *onl.Block, stk *onl.Stakes) error {
+		test.Equals(t, onl.ErrBlockNotExist, c1.Walk(bid2, func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
 			return nil
 		}))
 	})
 
 	t.Run("should pass on error in walk f", func(t *testing.T) {
 		errt := errors.New("foo")
-		test.Equals(t, errt, c1.Walk(g1, func(id onl.ID, b *onl.Block, stk *onl.Stakes) error {
+		test.Equals(t, errt, c1.Walk(g1, func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
 			return errt
 		}))
 	})
+}
+
+func TestChainWeighing(t *testing.T) {
+	//@TODO test our tip selection algorithm
 }

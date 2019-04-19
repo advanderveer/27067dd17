@@ -2,38 +2,56 @@ package onl
 
 import (
 	"fmt"
+	"math/big"
+	"sort"
+	"sync"
 )
 
 //Chain links blocks together and reaches consensus by keeping the chain with
 //the most weight
 type Chain struct {
-	store Store
-
+	points  uint64
+	store   Store
 	genesis struct {
 		*Block
 		*Stakes
 		id ID
 	}
+
+	//@TODO move weights and locking to a store so on boot we can just continue
+	//where we left off
+	tip     ID
+	tipw    uint64
+	weights map[ID]uint64
+	wmu     sync.RWMutex
 }
 
 //NewChain creates a new Chain
-func NewChain(s Store, ws ...*Write) (c *Chain, gen ID) {
-	c = &Chain{store: s}
+func NewChain(s Store, ws ...*Write) (c *Chain, gen ID, err error) {
+	c = &Chain{
+		points:  1000, //@TODO make this configurable?
+		store:   s,
+		weights: make(map[ID]uint64),
+	}
+
+	//genesis prev weight is 0
+	c.weights[NilID] = 0
 
 	//try to read genesis
 	tx := c.store.CreateTx(true)
 	defer tx.Discard()
 
-	if err := tx.Round(0, func(b *Block, stk *Stakes) error {
+	if err := tx.Round(0, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
 		if c.genesis.Block != nil {
-			panic("more then 1 block in round 0, expected only the genesis block")
+			return fmt.Errorf("there is more then just the genesis block")
 		}
 
 		c.genesis.Block = b
 		c.genesis.Stakes = stk
+		c.genesis.id = id
 		return nil
 	}); err != nil {
-		panic("failed to read round 0 for genesis block: " + err.Error())
+		return nil, gen, fmt.Errorf("failed to read round 0 for genesis block: " + err.Error())
 	}
 
 	//if no genesis could be read, create
@@ -42,17 +60,27 @@ func NewChain(s Store, ws ...*Write) (c *Chain, gen ID) {
 		c.genesis.Block.Append(ws...)
 
 		c.genesis.Stakes = &Stakes{} //@TODO finalize block
-		if err := tx.Write(c.genesis.Block, c.genesis.Stakes); err != nil {
-			panic("failed to write genesis block: " + err.Error())
+		if err := tx.Write(c.genesis.Block, c.genesis.Stakes, big.NewInt(1)); err != nil {
+			return nil, gen, fmt.Errorf("failed to write genesis block: " + err.Error())
 		}
 
 		if err := tx.Commit(); err != nil {
-			panic("failed to commit writing of genesis block: " + err.Error())
+			return nil, gen, fmt.Errorf("failed to commit writing of genesis block: %v", err)
 		}
+
+		c.genesis.id = c.genesis.Hash()
 	}
 
-	c.genesis.id = c.genesis.Hash()
-	return c, c.genesis.id
+	//set the tip to the genesis block
+	c.tip = c.genesis.id
+
+	//re-run weight calculations for the whole chain
+	err = c.weigh(tx, 0)
+	if err != nil {
+		return nil, gen, fmt.Errorf("failed to weigh chain blocks: %v", err)
+	}
+
+	return c, c.genesis.id, nil
 }
 
 //Genesis returns the genesis block
@@ -71,7 +99,7 @@ func (c *Chain) State(id ID) (s *State, err error) {
 
 func (c *Chain) state(tx Tx, id ID) (s *State, err error) {
 	var log [][]*Write
-	if err = c.walk(tx, id, func(id ID, bb *Block, stk *Stakes) error {
+	if err = c.walk(tx, id, func(id ID, bb *Block, stk *Stakes, rank *big.Int) error {
 		log = append([][]*Write{bb.Writes}, log...)
 		return nil
 	}); err != nil {
@@ -82,23 +110,23 @@ func (c *Chain) state(tx Tx, id ID) (s *State, err error) {
 }
 
 // Walk a chain from 'id' towards the genesis.
-func (c *Chain) Walk(id ID, f func(id ID, b *Block, stk *Stakes) error) (err error) {
+func (c *Chain) Walk(id ID, f func(id ID, b *Block, stk *Stakes, rank *big.Int) error) (err error) {
 	tx := c.store.CreateTx(false)
 	defer tx.Discard()
 	return c.walk(tx, id, f)
 }
 
-func (c *Chain) walk(tx Tx, id ID, f func(id ID, b *Block, stk *Stakes) error) (err error) {
+func (c *Chain) walk(tx Tx, id ID, f func(id ID, b *Block, stk *Stakes, rank *big.Int) error) (err error) {
 
 	//@TODO (optimization) would it be possible to do a key only walk on the lsm index
 
 	for {
-		b, stk, err := tx.Read(id)
+		b, stk, rank, err := tx.Read(id)
 		if err != nil {
 			return err
 		}
 
-		err = f(id, b, stk)
+		err = f(id, b, stk, rank)
 		if err != nil {
 			return err
 		}
@@ -134,7 +162,7 @@ func (c *Chain) Append(b *Block) (err error) {
 
 	// check if the block already exists
 	id := b.Hash()
-	_, _, err = tx.Read(id)
+	_, _, _, err = tx.Read(id)
 	if err != ErrBlockNotExist {
 		return ErrBlockExist
 	}
@@ -146,7 +174,7 @@ func (c *Chain) Append(b *Block) (err error) {
 	)
 
 	// walk prev chain while storing all blocks up to the genesis a log
-	if err = c.walk(tx, b.Prev, func(id ID, bb *Block, stk *Stakes) error {
+	if err = c.walk(tx, b.Prev, func(id ID, bb *Block, stk *Stakes, rank *big.Int) error {
 		if b.Prev == id {
 			prev = bb
 		}
@@ -162,6 +190,7 @@ func (c *Chain) Append(b *Block) (err error) {
 			fprev = bb
 		}
 
+		//@TODO if both pref and fprev have been found, stop walk early
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to walk prev chain: %v", err)
@@ -209,12 +238,12 @@ func (c *Chain) Append(b *Block) (err error) {
 	// prev timestamp must be before blocks timestamp, due to the chaining logic
 	// it is also ensured that the fprev timestamp is before prev
 	if prev.Timestamp >= b.Timestamp {
-
+		return ErrTimestampNotAfterPrev
 	}
 
 	// the blocks round must be after the prev round
 	if prev.Round >= b.Round {
-
+		return ErrRoundNrNotAfterPrev
 	}
 
 	// check if there were other blocks that the propser should have used as prev
@@ -225,22 +254,26 @@ func (c *Chain) Append(b *Block) (err error) {
 		//@TODO return early so proposers cannot ddos the acceptor
 	}
 
-	// write the actual block
-	err = tx.Write(b, nil)
+	//calculate the resulting rank, it must be higher then zero
+	rank := b.Rank(stake)
+	if rank.Sign() <= 0 {
+		return ErrZeroRank
+	}
+
+	// @TODO check if the round nr makes sense (together with timestamp?) what happens if
+	// a very high round nr is proposed with a very recent timestamp (prev+1)
+
+	// write the actual block and rank
+	err = tx.Write(b, nil, rank)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %v", err)
 	}
 
-	// check if the round nr makes sense (together with timestamp?) what happens if
-	// a very high round nr is proposed with a very recent timestamp (prev+1)
-
-	_ = stake
-	// [MAJOR] re-rank the block in its round
-	// - (requires) take and vrf pk to be read from chain
-	// re-calculate all weights from this round up to the latest
-	// - determine new tip
-	// - re assign sum weights
-	// - we don' need to rank re-sort the whole round
+	//re-weigh all rounds upwards
+	err = c.weigh(tx, b.Round)
+	if err != nil {
+		return fmt.Errorf("failed to weigh rounds: %v", err)
+	}
 
 	// [MAJOR] distribute stake to all ancestors for finalization
 	// - (requires stake) to be read from chain
@@ -250,4 +283,69 @@ func (c *Chain) Append(b *Block) (err error) {
 	// - apply newly finalized blocks
 
 	return tx.Commit()
+}
+
+//Tip returns the current heaviest chain of blocks
+func (c *Chain) Tip() ID {
+	c.wmu.RLock()
+	defer c.wmu.RUnlock()
+	return c.tip
+}
+
+// Weigh all blocks from the the specified round upwards and change the current
+// longest tip to the block with the most weight behind it.
+func (c *Chain) Weigh(nr uint64) (err error) {
+	tx := c.store.CreateTx(false)
+	defer tx.Discard()
+	return c.weigh(tx, nr)
+}
+
+func (c *Chain) weigh(tx Tx, nr uint64) (err error) {
+	for rn := nr; rn <= tx.MaxRound(); rn++ {
+		type bl struct {
+			prev ID
+			rank *big.Int
+			id   ID
+		}
+
+		//read blocks of the round, specifically the rank
+		var blocks []*bl
+		if err = tx.Round(rn, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
+			blocks = append(blocks, &bl{rank: rank, prev: b.Prev, id: id})
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to read blocks from round: %v", err)
+		}
+
+		//sort by rank
+		sort.Slice(blocks, func(i, j int) bool {
+			return blocks[i].rank.Cmp(blocks[j].rank) > 0
+		})
+
+		//now with the new pos, determine weight
+		c.wmu.Lock()
+		for i, b := range blocks {
+			w := c.points / uint64(i+1)
+			prevw, ok := c.weights[b.prev]
+			if !ok {
+				c.wmu.Unlock()
+				return fmt.Errorf("encountered a prev block '%.10x' without a weight", b.prev)
+			}
+
+			sumw := prevw + w
+			c.weights[b.id] = sumw
+
+			//if sum-weight heigher or equal the the current tip sum-weight use that
+			//as the new tip. By also replacing on equal we prefer newly calculated
+			//weights over the old maximum
+			if sumw >= c.tipw {
+				c.tip = b.id
+				c.tipw = sumw
+			}
+		}
+
+		c.wmu.Unlock()
+	}
+
+	return
 }

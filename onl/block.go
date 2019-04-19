@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"math"
+	"math/big"
 
 	"github.com/advanderveer/27067dd17/vrf"
 	"github.com/advanderveer/27067dd17/vrf/ed25519"
@@ -11,6 +13,9 @@ import (
 
 //PK is a fixed-size public key identity
 type PK [32]byte
+
+//NilID is an empty id
+var NilID = ID{}
 
 //ID of a block is determined by hashing it
 type ID [sha256.Size]byte
@@ -20,7 +25,7 @@ func (id ID) Bytes() []byte { return id[:] }
 
 //Round number that is encoded in the ID
 func (id ID) Round() uint64 {
-	return binary.BigEndian.Uint64(id[:])
+	return math.MaxUint64 - binary.BigEndian.Uint64(id[:])
 }
 
 //Block holds the data that is send between members to reach consensus. Each
@@ -78,7 +83,7 @@ func (b *Block) Hash() (id ID) {
 	tsb := make([]byte, 8)
 	binary.BigEndian.PutUint64(tsb, b.Timestamp)
 	roundb := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundb, b.Round)
+	binary.BigEndian.PutUint64(roundb, math.MaxUint64-b.Round)
 
 	//encode transaction hashes in the id
 	var wrshs [][]byte
@@ -126,6 +131,13 @@ func (b *Block) VerifySignature() (ok bool) {
 //VerifyToken will verify the random function token
 func (b *Block) VerifyToken(tokenPK []byte) (ok bool) {
 	return vrf.Verify(tokenPK, b.Seed(), b.Token, b.Proof)
+}
+
+//Rank returns the block ranking as a function of the identities stake
+func (b *Block) Rank(stake uint64) (rank *big.Int) {
+	rank = big.NewInt(0).SetBytes(b.Token)
+	rank.Mul(rank, big.NewInt(int64(stake)))
+	return
 }
 
 //Append will append operations the the block it doesn't check if for duplicates

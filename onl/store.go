@@ -6,6 +6,8 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io/ioutil"
+	"math"
+	"math/big"
 	"os"
 
 	"github.com/dgraph-io/badger"
@@ -27,9 +29,10 @@ type Store interface {
 
 //Tx is an ACID interaction with the store
 type Tx interface {
-	Write(b *Block, stk *Stakes) (err error)
-	Read(id ID) (b *Block, stk *Stakes, err error)
-	Round(nr uint64, f func(b *Block, stk *Stakes) error) (err error)
+	Write(b *Block, stk *Stakes, rank *big.Int) (err error)
+	Read(id ID) (b *Block, stk *Stakes, rank *big.Int, err error)
+	Round(nr uint64, f func(id ID, b *Block, stk *Stakes, rank *big.Int) error) (err error)
+	MaxRound() (nr uint64)
 
 	Commit() (err error)
 	Discard()
@@ -45,13 +48,31 @@ type BadgerTx struct {
 	btx *badger.Txn
 }
 
-//Round calls f in lexicographically order of the id for each block in round 'nr'.
-func (tx *BadgerTx) Round(nr uint64, f func(b *Block, stk *Stakes) error) (err error) {
+//MaxRound returns the max round that is currently stored
+func (tx *BadgerTx) MaxRound() (nr uint64) {
+	opt := badger.DefaultIteratorOptions
+	opt.PrefetchValues = false
+
+	iter := tx.btx.NewIterator(opt)
+	defer iter.Close()
+
+	for iter.Rewind(); iter.Valid(); iter.Next() {
+		kr := iter.Item().Key()[:8]
+		nr = binary.BigEndian.Uint64(kr)
+		nr = math.MaxUint64 - nr
+		return nr
+	}
+
+	return
+}
+
+// Round calls f in lexicographically order of the id for each block in round 'nr'.
+func (tx *BadgerTx) Round(nr uint64, f func(id ID, b *Block, stk *Stakes, rank *big.Int) error) (err error) {
 	opt := badger.DefaultIteratorOptions
 	opt.PrefetchSize = 10
 
 	prefix := make([]byte, 8)
-	binary.BigEndian.PutUint64(prefix, nr)
+	binary.BigEndian.PutUint64(prefix, math.MaxUint64-nr)
 
 	iter := tx.btx.NewIterator(opt)
 	defer iter.Close()
@@ -68,12 +89,15 @@ func (tx *BadgerTx) Round(nr uint64, f func(b *Block, stk *Stakes) error) (err e
 			return fmt.Errorf("failed to read block value: %v", err)
 		}
 
-		b, fin, err := decode(d)
+		b, fin, rank, err := decode(d)
 		if err != nil {
 			return fmt.Errorf("failed to decode block data: %v", err)
 		}
 
-		err = f(b, fin)
+		var id ID
+		copy(id[:], key)
+
+		err = f(id, b, fin, rank)
 		if err != nil {
 			return err
 		}
@@ -83,12 +107,13 @@ func (tx *BadgerTx) Round(nr uint64, f func(b *Block, stk *Stakes) error) (err e
 }
 
 //Write block info and replace any existing info
-func (tx *BadgerTx) Write(b *Block, stk *Stakes) (err error) {
+func (tx *BadgerTx) Write(b *Block, stk *Stakes, rank *big.Int) (err error) {
 	buf := bytes.NewBuffer(nil)
 	if err = gob.NewEncoder(buf).Encode(&struct {
 		*Block
 		*Stakes
-	}{b, stk}); err != nil {
+		Rank *big.Int
+	}{b, stk, rank}); err != nil {
 		return fmt.Errorf("failed to encode block data: %v", err)
 	}
 
@@ -100,34 +125,35 @@ func (tx *BadgerTx) Write(b *Block, stk *Stakes) (err error) {
 	return
 }
 
-func decode(d []byte) (b *Block, stk *Stakes, err error) {
+func decode(d []byte) (b *Block, stk *Stakes, rank *big.Int, err error) {
 	bb := &struct {
 		*Block
 		*Stakes
+		Rank *big.Int
 	}{}
 
 	err = gob.NewDecoder(bytes.NewReader(d)).Decode(bb)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode block data: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to decode block data: %v", err)
 	}
 
-	return bb.Block, bb.Stakes, nil
+	return bb.Block, bb.Stakes, bb.Rank, nil
 }
 
 //Read block data from the store and any finalization info
-func (tx *BadgerTx) Read(id ID) (b *Block, stk *Stakes, err error) {
+func (tx *BadgerTx) Read(id ID) (b *Block, stk *Stakes, rank *big.Int, err error) {
 	it, err := tx.btx.Get(id.Bytes())
 	if err != nil {
 		if err == badger.ErrKeyNotFound {
-			return nil, nil, ErrBlockNotExist
+			return nil, nil, nil, ErrBlockNotExist
 		}
 
-		return nil, nil, fmt.Errorf("failed to get key data: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to get key data: %v", err)
 	}
 
 	d, err := it.Value()
 	if err != nil {
-		return nil, nil, fmt.Errorf("faile to read block data: %v", err)
+		return nil, nil, nil, fmt.Errorf("faile to read block data: %v", err)
 	}
 
 	return decode(d)

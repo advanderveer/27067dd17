@@ -2,6 +2,7 @@ package onl_test
 
 import (
 	"errors"
+	"math/big"
 	"testing"
 
 	"github.com/advanderveer/27067dd17/onl"
@@ -16,25 +17,31 @@ func TestBadgerReadWriteStore(t *testing.T) {
 
 	idn1 := onl.NewIdentity([]byte{0x01})
 	b1 := idn1.Mint(testClock(1), bid1, bid2, 1)
+	b2 := idn1.Mint(testClock(2), b1.Hash(), b1.Hash(), 2)
 
 	tx := s.CreateTx(true)
 	defer tx.Discard()
-	err := tx.Write(b1, nil)
-	test.Ok(t, err)
+
+	test.Equals(t, uint64(0), tx.MaxRound())
+
+	test.Ok(t, tx.Write(b2, nil, big.NewInt(2)))
+	test.Ok(t, tx.Write(b1, nil, big.NewInt(1)))
 	test.Ok(t, tx.Commit())
 
 	tx = s.CreateTx(false)
 	defer tx.Discard()
 
-	b2, _, err := tx.Read(b1.Hash())
+	test.Equals(t, uint64(2), tx.MaxRound())
+	b2, _, rank1, err := tx.Read(b1.Hash())
 	test.Ok(t, err)
 	test.Equals(t, b1, b2)
+	test.Equals(t, "1", rank1.String())
 	test.Ok(t, tx.Commit())
 
 	t.Run("test block not exist", func(t *testing.T) {
 		tx = s.CreateTx(false)
 		defer tx.Discard()
-		_, _, err = tx.Read(bid1)
+		_, _, _, err = tx.Read(bid1)
 		test.Equals(t, onl.ErrBlockNotExist, err)
 	})
 
@@ -42,13 +49,14 @@ func TestBadgerReadWriteStore(t *testing.T) {
 		tx = s.CreateTx(false)
 		defer tx.Discard()
 
-		test.Ok(t, tx.Round(1, func(b *onl.Block, stk *onl.Stakes) error {
+		test.Ok(t, tx.Round(1, func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
+			test.Equals(t, b2.Hash(), id)
 			test.Equals(t, b2, b)
 			return nil
 		}))
 
 		err1 := errors.New("foo")
-		test.Equals(t, err1, tx.Round(1, func(b *onl.Block, stk *onl.Stakes) error {
+		test.Equals(t, err1, tx.Round(1, func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
 			return err1
 		}))
 	})

@@ -30,34 +30,34 @@ func TestBlockHashing(t *testing.T) {
 
 	b1 := idn1.Mint(c1, bid1, bid2, 1)
 	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "0000000000000001382ab918", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe9443880e", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
 
 	//expect the hash to change on every field manipulation
 	b1.FinalizedPrev[0] = 0x01
-	test.Equals(t, "0000000000000001e48f6195", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe71974c3e", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Prev[0] = 0x02
-	test.Equals(t, "0000000000000001cc06c4ff", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe5afeebb2", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.PK[0] = 0x01
-	test.Equals(t, "000000000000000172979cb7", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe4f83959b", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Proof[0] = 0x01
-	test.Equals(t, "0000000000000001bdeab958", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe9257ac8b", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Token[0] = 0x01
-	test.Equals(t, "0000000000000001a7018c85", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe11ad84f8", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Timestamp += 1
-	test.Equals(t, "0000000000000001c0a77287", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe10aa6ee1", fmt.Sprintf("%.12x", b1.Hash()))
 
 	b1.Round = 100
-	test.Equals(t, "0000000000000064ba226bc6", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "ffffffffffffff9bf8c446ed", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(100), b1.Hash().Round())
 
 	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "0000000000000064a51ff1c1", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash()))
 }
 
 func TestConsistentWritesHashing(t *testing.T) {
@@ -83,7 +83,7 @@ func TestBlockMintingSigningVerification(t *testing.T) {
 	test.Equals(t, false, b1.VerifySignature())
 
 	idn1.Sign(b1)
-	test.Equals(t, "b8474890", fmt.Sprintf("%.4x", b1.Signature))
+	test.Equals(t, "7d77be7b", fmt.Sprintf("%.4x", b1.Signature))
 	test.Equals(t, true, b1.VerifySignature())
 
 	//crypto should verify
@@ -96,4 +96,13 @@ func TestBlockMintingSigningVerification(t *testing.T) {
 	//changing a field should invalidate the block signature
 	b1.Timestamp += 1
 	test.Equals(t, false, b1.VerifySignature())
+}
+
+func TestBlockRanking(t *testing.T) {
+	idn1 := onl.NewIdentity([]byte{0x01})
+	b1 := idn1.Mint(testClock(1), bid1, bid2, 1)
+
+	test.Equals(t, "0", b1.Rank(0).Text(10)) //should equal exactly 0
+	test.Equals(t, "97552841951904930067318056973531093736152646717171940036091344696617083484138", b1.Rank(1).Text(10))
+	test.Equals(t, "195105683903809860134636113947062187472305293434343880072182689393234166968276", b1.Rank(2).Text(10))
 }

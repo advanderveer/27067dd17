@@ -12,4 +12,7 @@ var (
 	ErrStateReconstruction     = errors.New("failed to reconstruct state")
 	ErrApplyConflict           = errors.New("conflict during apply")
 	ErrNoTokenPK               = errors.New("no token pk committed")
+	ErrZeroRank                = errors.New("blocks has zero rank")
+	ErrRoundNrNotAfterPrev     = errors.New("round number wasn't after the prev's round number")
+	ErrTimestampNotAfterPrev   = errors.New("timestamp didn't come after prev's timestamp")
 )
