@@ -140,13 +140,9 @@ func (b *Block) Rank(stake uint64) (rank *big.Int) {
 	return
 }
 
-//Append will append operations the the block it doesn't check if for duplicates
-func (b *Block) Append(ws ...*Write) {
+//AppendWrite will append operations the the block it doesn't check if for duplicates
+func (b *Block) AppendWrite(ws ...*Write) {
 	for _, w := range ws {
-		if w == nil {
-			continue
-		}
-
 		b.Writes = append(b.Writes, w)
 	}
 }

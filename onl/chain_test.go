@@ -14,14 +14,10 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	s1, clean := onl.TempBadgerStore()
 	defer clean()
 
-	st1, err := onl.NewState(nil)
-	test.Ok(t, err)
-	w1 := st1.Update(func(*onl.KV) { /* empty should be ignored */ })
-	w2 := st1.Update(func(kv *onl.KV) {
+	c1, gen1, err := onl.NewChain(s1, func(kv *onl.KV) {
 		kv.Tx.Set([]byte{0x01}, []byte{0x02})
 	})
 
-	c1, gen1, err := onl.NewChain(s1, w1, w2)
 	test.Ok(t, err)
 
 	g1 := c1.Genesis()
@@ -56,13 +52,10 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	s1, clean := onl.TempBadgerStore()
 	defer clean()
 
-	st1, err := onl.NewState(nil)
-	test.Ok(t, err)
-
-	c1, g1, err := onl.NewChain(s1, st1.Update(func(kv *onl.KV) {
+	c1, g1, err := onl.NewChain(s1, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)             //mint 1 currency
 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK()) //then deposit it
-	}))
+	})
 	test.Ok(t, err)
 
 	b1 := idn1.Mint(testClock(1), g1, g1, 1)
@@ -117,22 +110,15 @@ func TestRoundWeigh(t *testing.T) {
 	store, clean := onl.TempBadgerStore()
 	defer clean()
 
-	state, err := onl.NewState(nil)
-	test.Ok(t, err)
-
 	idn1 := onl.NewIdentity([]byte{0x01})
-	write1 := state.Update(func(kv *onl.KV) {
+	idn2 := onl.NewIdentity([]byte{0x03})
+
+	chain, gen, err := onl.NewChain(store, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)
 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
-	})
-
-	idn2 := onl.NewIdentity([]byte{0x03})
-	write2 := state.Update(func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn2.PK(), 1)
 		kv.DepositStake(idn2.PK(), 1, idn2.TokenPK())
 	})
-
-	chain, gen, err := onl.NewChain(store, write1, write2)
 	test.Ok(t, err)
 
 	b0, w0, err := chain.Read(gen)
@@ -178,11 +164,8 @@ func tallRound(height, width uint64, t *testing.T) {
 	store, clean := onl.TempBadgerStore()
 	defer clean()
 
-	state, err := onl.NewState(nil)
-	test.Ok(t, err)
-
 	var idns []*onl.Identity
-	write := state.Update(func(kv *onl.KV) {
+	chain, gen, err := onl.NewChain(store, func(kv *onl.KV) {
 		for i := uint64(0); i < height; i++ {
 			idb := make([]byte, 8)
 			binary.BigEndian.PutUint64(idb, i)
@@ -194,8 +177,6 @@ func tallRound(height, width uint64, t *testing.T) {
 			idns = append(idns, idn)
 		}
 	})
-
-	chain, gen, err := onl.NewChain(store, write)
 	test.Ok(t, err)
 
 	clock := onl.NewWallClock()
@@ -206,8 +187,6 @@ func tallRound(height, width uint64, t *testing.T) {
 			b := idn.Mint(clock, tip, gen, j)
 			idn.Sign(b)
 
-			//@TODO add operations?
-
 			test.Ok(t, chain.Append(b))
 		}
 	}
@@ -215,4 +194,38 @@ func tallRound(height, width uint64, t *testing.T) {
 
 func TestWeigh1TallRound(t *testing.T) {
 	tallRound(10, 10, t) //@TODO assert performance, or nr of operations
+}
+
+func TestChainKVOperation(t *testing.T) {
+	store, clean := onl.TempBadgerStore()
+	defer clean()
+
+	//create an identity
+	idn := onl.NewIdentity([]byte{0x01})
+
+	//create a chain with genesis deposit and coinbase
+	chain, gen, _ := onl.NewChain(store, func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn.PK(), 1)
+		kv.DepositStake(idn.PK(), 1, idn.TokenPK())
+	})
+
+	//create a write from the current genesis tip
+	w := chain.Update(func(kv *onl.KV) {
+		kv.Set([]byte{0x01}, []byte{0x02})
+	})
+
+	//mint a block ourselves, add the write
+	b := idn.Mint(testClock(1), gen, gen, 1)
+	b.AppendWrite(w)
+
+	//sign the block
+	idn.Sign(b)
+
+	//append to chain
+	test.Ok(t, chain.Append(b))
+
+	//new tip has the write incorporated
+	chain.View(func(kv *onl.KV) {
+		test.Equals(t, []byte{0x02}, kv.Get([]byte{0x01}))
+	})
 }

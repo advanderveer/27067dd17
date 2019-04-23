@@ -130,7 +130,8 @@ condition trasnsactions? https://github.com/perlin-network/life
 - _Can there be multiple blocks in each round with a majority stake (be finalized?)_
 - _what happens if stake is deposited or released in majority group_ nothing will change
   it will only affected if the block in it gets finalized
-
+- _Can a identity commit to a pk VRF token without knowing what its gonna be?_ Then we can
+  can base vrf solely on the round?
 
 ## Resources
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193

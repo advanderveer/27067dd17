@@ -29,7 +29,7 @@ func TestBlockHashing(t *testing.T) {
 	idn1 := onl.NewIdentity([]byte{0x01})
 
 	b1 := idn1.Mint(c1, bid1, bid2, 1)
-	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
+	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
 	test.Equals(t, "fffffffffffffffe9443880e", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
 
@@ -56,7 +56,7 @@ func TestBlockHashing(t *testing.T) {
 	test.Equals(t, "ffffffffffffff9bf8c446ed", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(100), b1.Hash().Round())
 
-	b1.Append(&onl.Write{TxData: &ssi.TxData{}})
+	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
 	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash()))
 }
 
@@ -70,7 +70,7 @@ func TestConsistentWritesHashing(t *testing.T) {
 	})
 
 	b1 := idn1.Mint(testClock(1), bid1, bid1, 1)
-	b1.Append(w1)
+	b1.AppendWrite(w1)
 	for i := 0; i < 100; i++ { //should hash consistently
 		test.Equals(t, b1.Hash(), b1.Hash())
 	}

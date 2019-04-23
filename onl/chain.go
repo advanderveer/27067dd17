@@ -32,7 +32,7 @@ type Chain struct {
 }
 
 //NewChain creates a new Chain
-func NewChain(s Store, ws ...*Write) (c *Chain, gen ID, err error) {
+func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 	c = &Chain{
 		points:  1000, //@TODO make this configurable?
 		store:   s,
@@ -59,10 +59,18 @@ func NewChain(s Store, ws ...*Write) (c *Chain, gen ID, err error) {
 		return nil, gen, fmt.Errorf("failed to read round 0 for genesis block: " + err.Error())
 	}
 
-	//if no genesis could be read, create
+	//if no genesis could be read, create from empty state
 	if c.genesis.Block == nil {
 		c.genesis.Block = &Block{Token: []byte("vi veri veniversum vivus vici")}
-		c.genesis.Block.Append(ws...)
+
+		st, err := NewState(nil)
+		if err != nil {
+			return nil, gen, fmt.Errorf("failed to setup empty state for genesis update: %v", err)
+		}
+
+		for _, genf := range genfs {
+			c.genesis.Block.AppendWrite(st.Update(genf))
+		}
 
 		c.genesis.Stakes = &Stakes{} //@TODO finalize block
 		if err := tx.Write(c.genesis.Block, c.genesis.Stakes, big.NewInt(1)); err != nil {
@@ -304,14 +312,14 @@ func (c *Chain) Append(b *Block) (err error) {
 	//@TODO (optimization) we should allow for a max nr of top blocks per round, past
 	//      the total points we hand out per round it it not really effective to rank them anymore
 	//@TODO (optimization) we would like to add this limit using a vrf threshold so
-	//      members know they don't even need to send it
+	//      honest members know they don't even need to send it
 	newTip, err := c.weigh(tx, b.Round)
 	if err != nil {
 		return fmt.Errorf("failed to weigh rounds: %v", err)
 	}
 
 	//if this blocks is a new tip, set the state we're working with to it
-	//@TODO any race conditions between setting the tip and the newTip assertion
+	//@TODO are there any race conditions between setting the tip and the newTip assertion?
 	if newTip {
 		atomic.StorePointer(&c.tstate, unsafe.Pointer(state))
 	}
