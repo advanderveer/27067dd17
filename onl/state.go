@@ -45,6 +45,7 @@ func (s *State) Apply(w *Write, dry bool) (err error) {
 	//@TODO some operations can only be done in the genesis block
 	//@TODO some operations can only be done with proof of misbehaviour
 	//@TODO validate max key and value lengths
+	//@TODO check signature
 
 	err = s.db.Commit(w.TxData, dry)
 	if err == ssi.ErrConflict {

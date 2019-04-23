@@ -18,7 +18,7 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	test.Ok(t, err)
 	w1 := st1.Update(func(*onl.KV) { /* empty should be ignored */ })
 	w2 := st1.Update(func(kv *onl.KV) {
-		kv.Set([]byte{0x01}, []byte{0x02})
+		kv.Tx.Set([]byte{0x01}, []byte{0x02})
 	})
 
 	c1, gen1, err := onl.NewChain(s1, w1, w2)
@@ -33,7 +33,7 @@ func TestChainCreationAndGenesis(t *testing.T) {
 		test.Ok(t, err)
 
 		st2.Read(func(kv *onl.KV) {
-			test.Equals(t, []byte{0x02}, kv.Get([]byte{0x01}))
+			test.Equals(t, []byte{0x02}, kv.Tx.Get([]byte{0x01}))
 		})
 	})
 
@@ -166,7 +166,7 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, b2.Hash(), chain.Tip())
 }
 
-func tallRound(height int, width uint64, t *testing.T) {
+func tallRound(height, width uint64, t *testing.T) {
 	store, clean := onl.TempBadgerStore()
 	defer clean()
 
@@ -175,9 +175,9 @@ func tallRound(height int, width uint64, t *testing.T) {
 
 	var idns []*onl.Identity
 	write := state.Update(func(kv *onl.KV) {
-		for i := 0; i < height; i++ {
+		for i := uint64(0); i < height; i++ {
 			idb := make([]byte, 8)
-			binary.BigEndian.Uint64(idb)
+			binary.BigEndian.PutUint64(idb, i)
 
 			idn := onl.NewIdentity(idb)
 			kv.CoinbaseTransfer(idn.PK(), 1)            //mint 1 currency

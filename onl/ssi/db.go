@@ -31,7 +31,6 @@ func NewDB() (db *DB) {
 				tx := &Tx{
 					c:        db,
 					snapshot: db.store.Txn(), //fetch a poin-in-time copy
-					// commitC:  db.commitReqs,
 					data: &TxData{
 						TimeStart: db.oracle.Curr(), //pick up a read time stamp
 						ReadRows:  make(KeySet),

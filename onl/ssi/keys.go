@@ -29,7 +29,11 @@ func (kvs KeyChangeSet) KeySet() (ks KeySet) {
 
 //Add a key to our set
 func (kvs KeyChangeSet) Add(k, v []byte) {
-	kvs[keyHash(k)] = &Change{K: k, V: v}
+	c := &Change{K: make([]byte, len(k)), V: make([]byte, len(v))}
+	copy(c.K, k) //we copy over the values such that changing it underneath
+	copy(c.V, v) //doesn't change the value in the database
+
+	kvs[keyHash(k)] = c
 }
 
 //KeySet is a set of transaction keys

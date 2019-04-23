@@ -54,7 +54,6 @@ func TestDryRun(t *testing.T) {
 }
 
 func TestReadWriteConflict(t *testing.T) {
-
 	db := NewDB()
 	tx1 := db.NewTx()
 	tx2 := db.NewTx()
@@ -75,4 +74,44 @@ func TestReadWriteConflict(t *testing.T) {
 
 	//tx2 should not commit with dry run
 	test.Equals(t, ErrConflict, db.Commit(tx2.Data(), true))
+}
+
+func TestValueChangeOutsideTx(t *testing.T) {
+	t.Run("change set outside tx", func(t *testing.T) {
+		db := NewDB()
+		v1 := []byte{0x02}
+		tx := db.NewTx()
+		tx.Set([]byte("bob"), v1)
+		test.Ok(t, tx.Commit())
+
+		v1[0] = 0x01
+
+		tx = db.NewTx()
+		test.Equals(t, []byte{0x02}, tx.Get([]byte("bob")))
+	})
+
+	t.Run("change during tx", func(t *testing.T) {
+		db := NewDB()
+		v1 := []byte{0x02}
+		tx := db.NewTx()
+		tx.Set([]byte("bob"), v1)
+
+		v1[0] = 0x01
+
+		test.Equals(t, []byte{0x02}, tx.Get([]byte("bob")))
+	})
+
+	t.Run("change stored value", func(t *testing.T) {
+		db := NewDB()
+		v1 := []byte{0x02}
+		tx := db.NewTx()
+		tx.Set([]byte("bob"), v1)
+
+		v2 := tx.Get([]byte("bob"))
+		test.Ok(t, tx.Commit())
+
+		v2[0] = 0x01 //this shouldn't change our get
+
+		test.Equals(t, []byte{0x02}, tx.Get([]byte("bob")))
+	})
 }

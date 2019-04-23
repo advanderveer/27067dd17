@@ -27,18 +27,29 @@ type Tx struct {
 //Set key 'k' to value 'v'
 func (tx *Tx) Set(k, v []byte) {
 	tx.data.WriteRows.Add(k, v)
-	tx.snapshot.Insert([]byte(k), v)
+
+	//we need to copy the data else changing the array outside
+	//of the tx changes it in the snapshot
+	kd := make([]byte, len(k))
+	copy(kd, k)
+	vd := make([]byte, len(v))
+	copy(vd, v)
+
+	tx.snapshot.Insert(kd, vd)
 }
 
 //Get the value 'v' at key 'k'
-func (tx *Tx) Get(k []byte) []byte {
+func (tx *Tx) Get(k []byte) (v []byte) {
 	tx.data.ReadRows.Add(k)
 	vraw, ok := tx.snapshot.Get(k)
 	if !ok {
 		return nil
 	}
 
-	return vraw.([]byte)
+	//make sure to copy
+	v = make([]byte, len(vraw.([]byte)))
+	copy(v, vraw.([]byte))
+	return
 }
 
 //Data returns the underlying data, suitable for transport
