@@ -34,6 +34,7 @@ func NewState(log [][]*Write) (s *State, err error) {
 //the data would be added but isn't actually. This method is also called in the
 //process of replicating block writes. If apply returns an error it will not be
 //accepted by peers.
+//@TODO remove the dry-run option if we no longer use it anywere
 func (s *State) Apply(w *Write, dry bool) (err error) {
 	if w == nil {
 		return //nil writes can happen if update calls result in zero writes
@@ -59,8 +60,8 @@ func (s *State) Apply(w *Write, dry bool) (err error) {
 	return
 }
 
-//Read data from the state, any writes will be ignored
-func (s *State) Read(f func(kv *KV)) {
+//View data from the state, any writes will be ignored
+func (s *State) View(f func(kv *KV)) {
 	f(&KV{s.db.NewTx()})
 }
 

@@ -21,7 +21,7 @@ func TestBasicStateHandling(t *testing.T) {
 	s2, err := onl.NewState([][]*onl.Write{{w1}})
 	test.Ok(t, err)
 
-	s2.Read(func(kv *onl.KV) {
+	s2.View(func(kv *onl.KV) {
 		test.Equals(t, []byte{0x02}, kv.Get([]byte{0x01}))
 	})
 

@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"sort"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 //Chain links blocks together and reaches consensus by keeping the chain with
@@ -24,6 +26,9 @@ type Chain struct {
 	tipw    uint64
 	weights map[ID]uint64
 	wmu     sync.RWMutex
+
+	// smu    sync.RWMutex
+	tstate unsafe.Pointer //*State
 }
 
 //NewChain creates a new Chain
@@ -75,11 +80,20 @@ func NewChain(s Store, ws ...*Write) (c *Chain, gen ID, err error) {
 	c.tip = c.genesis.id
 
 	//re-run weight calculations for the whole chain
-	//@TODO (optimization) we don't want to do this every time for long chains
-	err = c.weigh(tx, 0)
+	//@TODO (optimization) we don't want to do this every time the system boots up
+	_, err = c.weigh(tx, 0)
 	if err != nil {
 		return nil, gen, fmt.Errorf("failed to weigh chain blocks: %v", err)
 	}
+
+	//set the tip state we work with from the current tip
+	tstate, err := c.State(c.tip)
+	if err != nil {
+		return nil, gen, fmt.Errorf("failed to re-build state from tip: %v", err)
+	}
+
+	// atomic.StorePointer(addr, val)
+	atomic.StorePointer(&c.tstate, unsafe.Pointer(tstate))
 
 	return c, c.genesis.id, nil
 }
@@ -138,6 +152,16 @@ func (c *Chain) walk(tx Tx, id ID, f func(id ID, b *Block, stk *Stakes, rank *bi
 
 		id = b.Prev
 	}
+}
+
+// View values from the key-value state of the current tip
+func (c *Chain) View(f func(kv *KV)) {
+	(*State)(atomic.LoadPointer(&c.tstate)).View(f)
+}
+
+// Update values on the key-value state of the current tip and return a new write
+func (c *Chain) Update(f func(kv *KV)) (w *Write) {
+	return (*State)(atomic.LoadPointer(&c.tstate)).Update(f)
 }
 
 // Append a block to the chain. If an error is returned the block could not be
@@ -202,40 +226,6 @@ func (c *Chain) Append(b *Block) (err error) {
 		return ErrFinalizedPrevNotInChain
 	}
 
-	//reconstruct the state
-	//@TODO we're walking again here but we would like to re-use our code also
-	state, err := c.state(tx, b.Prev)
-	if err != nil {
-		return ErrStateReconstruction
-	}
-
-	//read dynamic data from rebuild state
-	var stake uint64
-	var tpk []byte
-	state.Read(func(kv *KV) {
-		stake, tpk = kv.ReadStake(b.PK)
-		// @TODO read roundtime
-		// @TODO read the vrf threshold (if any)
-	})
-
-	//check if there was any token pk comitted
-	if tpk == nil {
-		return ErrNoTokenPK
-	}
-
-	//validate the token
-	if !b.VerifyToken(tpk) {
-		return ErrInvalidToken
-	}
-
-	//validate each write in the block by applying them in a dry-run
-	for _, w := range b.Writes {
-		err = state.Apply(w, true)
-		if err != nil {
-			return err
-		}
-	}
-
 	// prev timestamp must be before blocks timestamp, due to the chaining logic
 	// it is also ensured that the fprev timestamp is before prev
 	if prev.Timestamp >= b.Timestamp {
@@ -247,12 +237,45 @@ func (c *Chain) Append(b *Block) (err error) {
 		return ErrRoundNrNotAfterPrev
 	}
 
-	// check if there were other blocks that the propser should have used as prev
+	// @TODO check if the round nr makes sense (together with timestamp?) what happens if
+	// a very high round nr is proposed with a very recent timestamp (prev+1). Others
+	// would check that their timestamp would be after the block, if not they wouldn't
+	// vote on it?
+
+	// check if there were other blocks that the proposer should have used as prev
 	for r := prev.Round; r < b.Round; r++ {
 		//@TODO check if we know of any other block in a round in between the two rounds
 		//that could have been used as a prev?
 		//@TODO is this check still important if token randomness is based on fprev
 		//@TODO return early so proposers cannot ddos the acceptor
+	}
+
+	//reconstruct the state to validate the writes in the new block
+	//@TODO we're walking again here but we would like to re-use our code also
+	state, err := c.state(tx, b.Prev)
+	if err != nil {
+		return ErrStateReconstruction
+	}
+
+	//read dynamic data from rebuild state
+	var stake uint64
+	var tpk []byte
+	state.View(func(kv *KV) {
+		stake, tpk = kv.ReadStake(b.PK)
+		// @TODO read roundtime
+		// @TODO read the vrf threshold (if any)
+	})
+
+	//check if there was any token pk comitted
+	if tpk == nil {
+		return ErrNoTokenPK
+	}
+
+	//validate the token
+	//@TODO it takes a lot of effort to get to this validation point, can members
+	//mis-use this to ddos the network?
+	if !b.VerifyToken(tpk) {
+		return ErrInvalidToken
 	}
 
 	//calculate the resulting rank, it must be higher then zero
@@ -261,12 +284,15 @@ func (c *Chain) Append(b *Block) (err error) {
 		return ErrZeroRank
 	}
 
-	// @TODO check if the round nr makes sense (together with timestamp?) what happens if
-	// a very high round nr is proposed with a very recent timestamp (prev+1). Others
-	// would check that their timestamp would be after the block, if not they wouldn't
-	// vote on it?
+	//validate each write in the block by applying them to the new state
+	for _, w := range b.Writes {
+		err = state.Apply(w, false)
+		if err != nil {
+			return err
+		}
+	}
 
-	// write the actual block and rank
+	// all is well, write the actual block with its rank
 	err = tx.Write(b, nil, rank)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %v", err)
@@ -274,14 +300,20 @@ func (c *Chain) Append(b *Block) (err error) {
 
 	//re-weigh all rounds upwards
 	//@TODO (optimization) we should call weigh in batches, else the cost of running
-	//it grows super fast with tall rounds
+	//      it grows super fast with tall rounds
 	//@TODO (optimization) we should allow for a max nr of top blocks per round, past
-	//the total points we hand out per round it it not really effective to rank them anymore
+	//      the total points we hand out per round it it not really effective to rank them anymore
 	//@TODO (optimization) we would like to add this limit using a vrf threshold so
-	//members know they don't even need to send it
-	err = c.weigh(tx, b.Round)
+	//      members know they don't even need to send it
+	newTip, err := c.weigh(tx, b.Round)
 	if err != nil {
 		return fmt.Errorf("failed to weigh rounds: %v", err)
+	}
+
+	//if this blocks is a new tip, set the state we're working with to it
+	//@TODO any race conditions between setting the tip and the newTip assertion
+	if newTip {
+		atomic.StorePointer(&c.tstate, unsafe.Pointer(state))
 	}
 
 	// [MAJOR] distribute stake to all ancestors for finalization
@@ -289,6 +321,7 @@ func (c *Chain) Append(b *Block) (err error) {
 	// - check if this block provides the majority stake for the prev block
 	// - if so, finalize this block and all blocks before it
 	// - update our current state to this finalized chain
+	// - set the finalized state
 
 	return tx.Commit()
 }
@@ -321,13 +354,13 @@ func (c *Chain) Read(id ID) (b *Block, weight uint64, err error) {
 
 // Weigh all blocks from the the specified round upwards and change the current
 // longest tip to the block with the most weight behind it.
-func (c *Chain) Weigh(nr uint64) (err error) {
+func (c *Chain) Weigh(nr uint64) (newtip bool, err error) {
 	tx := c.store.CreateTx(false)
 	defer tx.Discard()
 	return c.weigh(tx, nr)
 }
 
-func (c *Chain) weigh(tx Tx, nr uint64) (err error) {
+func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
 	for rn := nr; rn <= tx.MaxRound(); rn++ {
 		type bl struct {
 			prev ID
@@ -341,7 +374,7 @@ func (c *Chain) weigh(tx Tx, nr uint64) (err error) {
 			blocks = append(blocks, &bl{rank: rank, prev: b.Prev, id: id})
 			return nil
 		}); err != nil {
-			return fmt.Errorf("failed to read blocks from round: %v", err)
+			return newtip, fmt.Errorf("failed to read blocks from round: %v", err)
 		}
 
 		//sort by rank
@@ -356,7 +389,7 @@ func (c *Chain) weigh(tx Tx, nr uint64) (err error) {
 			prevw, ok := c.weights[b.prev]
 			if !ok {
 				c.wmu.Unlock()
-				return fmt.Errorf("encountered a prev block '%.10x' without a weight", b.prev)
+				return newtip, fmt.Errorf("encountered a prev block '%.10x' without a weight", b.prev)
 			}
 
 			sumw := prevw + w
@@ -366,6 +399,10 @@ func (c *Chain) weigh(tx Tx, nr uint64) (err error) {
 			//as the new tip. By also replacing on equal we prefer newly calculated
 			//weights over the old maximum
 			if sumw >= c.tipw {
+				if c.tip != b.id {
+					newtip = true
+				}
+
 				c.tip = b.id
 				c.tipw = sumw
 			}

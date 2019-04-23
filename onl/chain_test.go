@@ -32,7 +32,7 @@ func TestChainCreationAndGenesis(t *testing.T) {
 		st2, err := c1.State(gen1)
 		test.Ok(t, err)
 
-		st2.Read(func(kv *onl.KV) {
+		st2.View(func(kv *onl.KV) {
 			test.Equals(t, []byte{0x02}, kv.Tx.Get([]byte{0x01}))
 		})
 	})
@@ -77,6 +77,13 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	test.Ok(t, c1.Append(b2))
 	test.Equals(t, b2.Hash(), c1.Tip())
 
+	//should be able to read tip kv
+	c1.View(func(kv *onl.KV) {
+		stake, tpk := kv.ReadStake(idn1.PK())
+		test.Equals(t, uint64(1), stake)
+		test.Equals(t, idn1.TokenPK(), tpk)
+	})
+
 	t.Run("should walk backwards in correct order", func(t *testing.T) {
 		var seen []onl.ID
 		test.Ok(t, c1.Walk(b2.Hash(), func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
@@ -104,7 +111,6 @@ func TestChainAppendingAndWalking(t *testing.T) {
 		_, _, err := c1.Read(bid4)
 		test.Equals(t, onl.ErrBlockNotExist, err)
 	})
-
 }
 
 func TestRoundWeigh(t *testing.T) {
@@ -150,7 +156,9 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, b2.Hash(), chain.Tip())
 
 	//calling weigh shouldn't change anything
-	test.Ok(t, chain.Weigh(0))
+	newt1, err := chain.Weigh(0)
+	test.Ok(t, err)
+	test.Equals(t, false, newt1)
 
 	//block 2 should have over taken the blocks 1 ranking
 	b12, w2, err := chain.Read(b1.Hash())

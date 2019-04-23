@@ -158,7 +158,7 @@ func TestMultipleStateKVFuzzing(t *testing.T) {
 	totals := make([]uint64, nStates)
 	for i, state := range states {
 		for _, idn := range idns {
-			state.Read(func(kv *onl.KV) {
+			state.View(func(kv *onl.KV) {
 				bal := kv.AccountBalance(idn.PK())
 				stake, _ := kv.ReadStake(idn.PK())
 
