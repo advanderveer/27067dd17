@@ -74,12 +74,18 @@ func TestKVOperations(t *testing.T) {
 	}), false))
 }
 
-func TestKVOperationsFuzzing(t *testing.T) {
-	nIdentities := 10
-	startBalance := uint64(100)
-	nOps := 1000
+// Imagine random concurrent operations being performed on any of a set of states.
+// We expected that once they are serialized onto all states that the SSI algorithm
+// should take care of removing conflicting operations and resulting in a consistent
+// view of the data.
+func TestMultipleStateKVFuzzing(t *testing.T) {
+	var err error
+	nIdentities := 3
+	nStates := 3
+	nOps := 10000
+	startBalance := uint64(150)
 	maxTransfer := 25
-	depositFreq := 100
+	depositFreq := 2
 
 	//create identities
 	idns := make([]*onl.Identity, nIdentities)
@@ -89,24 +95,28 @@ func TestKVOperationsFuzzing(t *testing.T) {
 		idns[i] = onl.NewIdentity(idb)
 	}
 
-	//setup blank state
-	state, err := onl.NewState(nil)
-	test.Ok(t, err)
+	//create states
+	states := make([]*onl.State, nStates)
+	for i := 0; i < nStates; i++ {
+		states[i], err = onl.NewState(nil)
+		test.Ok(t, err)
 
-	//initialize with coinbase transfers
-	for _, idn := range idns {
-		test.Ok(t, state.Apply(state.Update(func(kv *onl.KV) {
-			kv.CoinbaseTransfer(idn.PK(), startBalance)
-		}), false))
+		//with start balance
+		for _, idn := range idns {
+			test.Ok(t, states[i].Apply(states[i].Update(func(kv *onl.KV) {
+				kv.CoinbaseTransfer(idn.PK(), startBalance)
+			}), false))
+		}
 	}
 
-	//a slice of writes created concurrently on a single state
+	//create random writes on random states
 	writes := make(chan *onl.Write, nOps)
 	var wg sync.WaitGroup
 	for i := 0; i < nOps; i++ {
 		wg.Add(1)
 
-		go func(i int) {
+		state := states[rand.Intn(nStates)]
+		go func(i int, s *onl.State) {
 			defer wg.Done()
 
 			//perform random ops
@@ -114,7 +124,7 @@ func TestKVOperationsFuzzing(t *testing.T) {
 				amount := rand.Intn(maxTransfer)
 				from := idns[rand.Intn(nIdentities)]
 
-				if i%depositFreq == 0 {
+				if amount%depositFreq == 0 {
 					kv.DepositStake(from.PK(), uint64(amount), nil)
 				} else {
 					to := idns[rand.Intn(nIdentities)]
@@ -122,17 +132,20 @@ func TestKVOperationsFuzzing(t *testing.T) {
 				}
 			})
 
-		}(i)
+		}(i, state)
 	}
 
 	wg.Wait()
 
-	//applying them shouldn't invalidate the system
+	//applying them on all state shoudn't invalidate the system
 	var i int
 	for w := range writes {
-		err := state.Apply(w, false)
-		if err != nil && err != onl.ErrApplyConflict {
-			t.Fatalf("unexpected apply error: %v", err)
+		for _, state := range states {
+			err := state.Apply(w, false)
+			if err != nil && err != onl.ErrApplyConflict {
+				t.Fatalf("unexpected apply error: %v", err)
+			}
+
 		}
 
 		i++
@@ -142,17 +155,21 @@ func TestKVOperationsFuzzing(t *testing.T) {
 	}
 
 	//check the total amount of currency in the system
-	var total uint64
-	for _, idn := range idns {
-		state.Read(func(kv *onl.KV) {
-			bal := kv.AccountBalance(idn.PK())
-			stake, _ := kv.ReadStake(idn.PK())
+	totals := make([]uint64, nStates)
+	for i, state := range states {
+		for _, idn := range idns {
+			state.Read(func(kv *onl.KV) {
+				bal := kv.AccountBalance(idn.PK())
+				stake, _ := kv.ReadStake(idn.PK())
 
-			total += stake
-			total += bal
-		})
+				totals[i] += stake
+				totals[i] += bal
+			})
+		}
 	}
 
-	//should be the total capital put in
-	test.Equals(t, uint64(nIdentities)*startBalance, total)
+	//each state should end up without any currency missing
+	for _, total := range totals {
+		test.Equals(t, uint64(nIdentities)*startBalance, total)
+	}
 }
