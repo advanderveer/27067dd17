@@ -47,5 +47,4 @@ func TestOoOHandling(t *testing.T) {
 
 	o1.Handle(msg2)
 	test.Equals(t, []*engine.Msg{msg1, msg2, msg2}, handled) //already resolved
-
 }

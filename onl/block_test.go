@@ -58,6 +58,9 @@ func TestBlockHashing(t *testing.T) {
 
 	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
 	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash()))
+
+	b1.AppendWrite(nil) //shouldn't do anything
+	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash()))
 }
 
 func TestConsistentWritesHashing(t *testing.T) {

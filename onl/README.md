@@ -66,6 +66,7 @@ We look at the timestamps in the chain history. But which tip?
 Requires keeping of majority stake (intertwines layers) and which tip?
 
 ### Clock Based
+Problem: What is the byzantine fault tolerance of it
 
 #### Idea 1: Fixed round times
 We look at the wall clock and decide in which round we're currently at. The
