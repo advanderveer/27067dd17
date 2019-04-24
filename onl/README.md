@@ -52,6 +52,30 @@ of date minorty groups. New blocks are not accepted.
 This requires reasonable synced clocks. For now we require NTP but we think it should
 be possible to sync clocks precicely enough by looking at block times alone.
 
+- Look into Marzullo's Algorithm: https://en.wikipedia.org/wiki/Marzullo%27s_algorithm
+- And an extension on it that is used by NTP: https://en.wikipedia.org/wiki/Intersection_algorithm
+- A golang implementation: https://www.slideshare.net/romain_jacotin/marzullos-agreement-algorithm-and-dtss-intersection-algorithm-in-golang
+- Laports algorithm: https://lamport.azurewebsites.net/pubs/clocks.pdf
+
+### Tip Based
+
+#### Idea 2: Round times by chain history
+We look at the timestamps in the chain history. But which tip?
+
+#### Idea 4: Round ends when majority stake has casted a vote
+Requires keeping of majority stake (intertwines layers) and which tip?
+
+### Clock Based
+
+#### Idea 1: Fixed round times
+We look at the wall clock and decide in which round we're currently at. The
+duration of the round is fixed. But how to adjust to network size/speed?
+
+#### Idea 3: Some clock syncing algorithm
+It uses messages from other members to sync a local clock. Probably Marzullo's
+algorithm. How to adjust to network speed?
+
+
 ## Transactional Symantics
 We would like to provide a kv abstraction that compares to the possibilities of
 DynamoDB transactions (https://aws.amazon.com/blogs/aws/new-amazon-dynamodb-transactions/)
@@ -131,7 +155,11 @@ condition trasnsactions? https://github.com/perlin-network/life
 - _what happens if stake is deposited or released in majority group_ nothing will change
   it will only affected if the block in it gets finalized
 - _Can a identity commit to a pk VRF token without knowing what its gonna be?_ Then we can
-  can base vrf solely on the round?
+  can base vrf solely on the round? Maybe make the vrf's randomness dependant on the token
+  of the block that stores the pk commitment, this cannot be predicted. By committing the
+  vrf pk the user gets assigned a (verifiable) random number for each token it generates itself.
+- _What if we close a round only when majority of stored stake has proposed?_ This can cause
+  the minority segment of the network to halt, but maybe that is ok?
 
 ## Resources
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193
