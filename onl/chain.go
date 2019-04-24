@@ -189,6 +189,8 @@ func (c *Chain) Append(b *Block) (err error) {
 		return ErrZeroRound
 	}
 
+	// @TODO are empty blocks allowed?
+
 	// open our store tx
 	tx := c.store.CreateTx(true)
 	defer tx.Discard()

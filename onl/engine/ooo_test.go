@@ -48,3 +48,15 @@ func TestOoOHandling(t *testing.T) {
 	o1.Handle(msg2)
 	test.Equals(t, []*engine.Msg{msg1, msg2, msg2}, handled) //already resolved
 }
+
+func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
+	var handled []*engine.Msg
+	h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+	o1 := engine.NewOutOfOrder(h1)
+
+	o1.Resolve(bid1)
+	msg2 := &engine.Msg{Block: &onl.Block{Prev: bid1}}
+	o1.Handle(msg2)
+
+	test.Equals(t, []*engine.Msg{msg2}, handled) //should have handled the messages
+}

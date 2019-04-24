@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"testing"
 	"time"
@@ -15,26 +16,154 @@ type testClock uint64
 
 func (c testClock) ReadUs() uint64 { return uint64(c) }
 
-func TestEngineSetupAndShutdown(t *testing.T) {
-	s1, clean := onl.TempBadgerStore()
-	defer clean()
-	c1, _, _ := onl.NewChain(s1, func(kv *onl.KV) {
+func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *engine.MemBroadcast, e *engine.Engine, clean func()) {
+	store, cleanstore := onl.TempBadgerStore()
 
-	})
+	chain, _, err := onl.NewChain(store, genf...)
+	test.Ok(t, err)
 
-	osc1 := engine.NewMemOscillator()
-	bc1 := engine.NewMemBroadcast(100)
-	idn1 := onl.NewIdentity([]byte{0x01})
-	e1 := engine.New(os.Stderr, bc1, osc1.Pulse(), idn1, c1)
+	bc = engine.NewMemBroadcast(100)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	e = engine.New(os.Stderr, bc, osc.Pulse(), idn, chain)
+	return bc, e, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
 
-	test.Ok(t, e1.Shutdown(ctx))
+		test.Ok(t, e.Shutdown(ctx))
+		cleanstore()
+	}
 }
 
-func TestEngineRoundTaking(t *testing.T) {
-	// bc := engine.NewMemBroadcast(100)
-	// e1 := engine.New(ioutil.Discard)
+func TestEngineEmptyRounds(t *testing.T) {
+	idn := onl.NewIdentity([]byte{0x01})
+	osc := engine.NewMemOscillator()
+	_, e1, clean1 := testEngine(t, osc, idn)
+	for i := 0; i < 100; i++ {
+		osc.Fire()
+	}
 
+	clean1() //read any remaining pulses before closing down
+	test.Equals(t, uint64(101), e1.Round())
+}
+
+// Test that an engine can progress through key value writes on its own.
+func TestEngineWritingByItself(t *testing.T) {
+	nWrites := uint64(50)
+
+	idn := onl.NewIdentity([]byte{0x01})
+	osc := engine.NewMemOscillator()
+	_, e1, clean1 := testEngine(t, osc, idn, func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn.PK(), 1)
+		kv.DepositStake(idn.PK(), 1, idn.TokenPK())
+	})
+
+	//write to the engine async
+	go func() {
+		ctx := context.Background()
+		for j := uint64(0); j < nWrites; j++ {
+			time.Sleep(time.Millisecond)
+			test.Ok(t, e1.Update(ctx, func(kv *onl.KV) {
+				kb := make([]byte, 8)
+				binary.LittleEndian.PutUint64(kb, j)
+
+				kv.Set(kb, []byte{0x01})
+			}))
+		}
+	}()
+
+	//fire some rounds
+	for i := 0; i < 100; i++ {
+		time.Sleep(time.Millisecond * 3)
+		osc.Fire()
+	}
+
+	//wait for rounds to be wrapped up
+	clean1()
+
+	//should now read all 50 puts on itself
+	test.Ok(t, e1.View(func(kv *onl.KV) {
+		for j := uint64(0); j < nWrites; j++ {
+			kb := make([]byte, 8)
+			binary.LittleEndian.PutUint64(kb, j)
+
+			//@TODO (#2) this fails onces in a full moont
+			test.Equals(t, []byte{0x01}, kv.Get(kb))
+
+		}
+	}))
+
+	//@TODO assert memory pool size to be very empty
+	//@TODO assert out-of-order to be empty
+}
+
+// Test that one n engine writes and other engines replicate without writing themselves
+func TestEngineWriterReplication(t *testing.T) {
+
+	//testing variables
+	nWrites := uint64(20)
+
+	//global memory oscillator
+	osc := engine.NewMemOscillator()
+
+	//one identity will be writing blocks
+	idn1 := onl.NewIdentity([]byte{0x01})
+	genf := func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn1.PK(), 1)
+		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
+	}
+
+	idn3 := onl.NewIdentity([]byte{0x03})
+	idn2 := onl.NewIdentity([]byte{0x02})
+
+	//create engines with genesis status
+	bc1, e1, clean1 := testEngine(t, osc, idn1, genf)
+	bc2, e2, clean2 := testEngine(t, osc, idn2, genf)
+	bc3, e3, clean3 := testEngine(t, osc, idn3, genf)
+
+	//create a ring topology bc1->bc2->bc3->bc1
+	bc1.To(bc2)
+	bc2.To(bc3)
+	bc3.To(bc1)
+
+	//start writing thread
+	go func() {
+		ctx := context.Background()
+		for j := uint64(0); j < nWrites; j++ {
+			time.Sleep(time.Millisecond)
+			test.Ok(t, e1.Update(ctx, func(kv *onl.KV) {
+				kb := make([]byte, 8)
+				binary.LittleEndian.PutUint64(kb, j)
+
+				kv.Set(kb, []byte{0x01})
+			}))
+		}
+	}()
+
+	//fire some rounds
+	for i := 0; i < 50; i++ {
+		time.Sleep(time.Millisecond * 3)
+		osc.Fire()
+	}
+
+	//wrap it all up
+	clean1()
+	clean2()
+	clean3()
+
+	//check if repication was successfull
+	test.Ok(t, e2.View(func(kv *onl.KV) {
+		for j := uint64(0); j < nWrites; j++ {
+			kb := make([]byte, 8)
+			binary.LittleEndian.PutUint64(kb, j)
+			test.Equals(t, []byte{0x01}, kv.Get(kb))
+		}
+	}))
+
+	test.Ok(t, e3.View(func(kv *onl.KV) {
+		for j := uint64(0); j < nWrites; j++ {
+			kb := make([]byte, 8)
+			binary.LittleEndian.PutUint64(kb, j)
+			test.Equals(t, []byte{0x01}, kv.Get(kb))
+		}
+	}))
 }

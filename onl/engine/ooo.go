@@ -1,6 +1,8 @@
 package engine
 
-import "github.com/advanderveer/27067dd17/onl"
+import (
+	"github.com/advanderveer/27067dd17/onl"
+)
 
 //Handler handles messages
 type Handler interface {
@@ -28,12 +30,10 @@ func NewOutOfOrder(h Handler) *OutOfOrder {
 //Resolve will handle any messages that depended on this block
 func (o *OutOfOrder) Resolve(id onl.ID) {
 	defers, ok := o.defers[id]
-	if !ok {
-		return //nothing to resolve
-	}
-
-	for _, msg := range defers {
-		o.handler.Handle(msg)
+	if ok {
+		for _, msg := range defers {
+			o.handler.Handle(msg)
+		}
 	}
 
 	o.defers[id] = nil //nil elements means the id is resolved

@@ -162,6 +162,10 @@ condition trasnsactions? https://github.com/perlin-network/life
 - _What if we close a round only when majority of stored stake has proposed?_ This can cause
   the minority segment of the network to halt, but maybe that is ok?
 
+## Future Plans
+- Optional with WebRTC: https://github.com/pion/webrtc for NAT punching?
+- Compile to WASM
+
 ## Resources
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193
 - Committing to something upfront: https://eprint.iacr.org/2016/918.pdf
