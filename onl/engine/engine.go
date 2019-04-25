@@ -102,6 +102,11 @@ func New(logw io.Writer, bc Broadcast, p Pulse, idn *onl.Identity, c *onl.Chain)
 	return e
 }
 
+//Tip returns the current chain tip we're working with
+func (e *Engine) Tip() onl.ID {
+	return e.chain.Tip()
+}
+
 // View will read the chain's state
 func (e *Engine) View(f func(kv *onl.KV)) (err error) {
 	//@TODO take some handle to watch for
@@ -225,14 +230,21 @@ func (e *Engine) handleBlock(b *onl.Block) {
 	}
 
 	//append the block to the chain, any invalid blocks will be rejected here
-	err := e.chain.Append(b)
-	if err != nil {
-		if err == onl.ErrBlockExist {
-			return //nothing too see really
+	//@TODO make append retry n configurable and have some exponential backoff
+	for i := 0; i < 5; i++ {
+		err := e.chain.Append(b)
+		if err != nil {
+			if err == onl.ErrBlockExist {
+				return //nothing too do really
+			} else if err == onl.ErrAppendConflict {
+				continue //retry
+			}
+
+			e.logs.Printf("[INFO][%s] failed to append incoming block: %v", e.idn, err)
+			return
 		}
 
-		e.logs.Printf("[INFO][%s] failed to append incoming block: %v", e.idn, err)
-		return
+		break //append went through
 	}
 
 	//@TODO remove all writes from mempool if the block was finalized or if block
@@ -243,10 +255,37 @@ func (e *Engine) handleBlock(b *onl.Block) {
 	e.ooo.Resolve(b.Hash())
 
 	//relay to peers
-	err = e.bc.Write(&Msg{Block: b})
+	err := e.bc.Write(&Msg{Block: b})
 	if err != nil {
 		e.logs.Printf("[ERRO][%s] failed to relay block to peers: %v", e.idn, err)
 	}
+}
+
+//Draw will vizualize the engine's chain using the dot graph language
+func (e *Engine) Draw(w io.Writer) (err error) {
+	fmt.Fprintln(w, `digraph {`)
+
+	tip := e.chain.Tip()
+
+	if err = e.chain.ForEach(0, func(id onl.ID, b *onl.Block) error {
+		fmt.Fprintf(w, "\t"+`"%.6x" [shape=box,style="filled,solid",label="%.6x:%d:%d"`, id[8:], id[8:], b.Round, len(b.Writes))
+
+		if id == tip {
+			fmt.Fprintf(w, `,fillcolor="#DDDDDD"`)
+		} else {
+			fmt.Fprintf(w, `,fillcolor="#ffffff"`)
+		}
+
+		fmt.Fprintf(w, "]\n")
+		fmt.Fprintf(w, "\t"+`"%.6x" -> "%.6x";`+"\n", id[8:], b.Prev[8:])
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to iterate over all blocks: %v", err)
+	}
+
+	fmt.Fprintln(w, `}`)
+	return
 }
 
 // Shutdown will gracefully shutdown the engine. It will ask subsystems to close

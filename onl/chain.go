@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/dgraph-io/badger"
 )
 
 //Chain links blocks together and reaches consensus by keeping the chain with
@@ -24,7 +26,7 @@ type Chain struct {
 	weights map[ID]uint64
 	wmu     sync.RWMutex
 
-	//last tip state
+	//state of the tip we're on
 	tstate unsafe.Pointer //*State
 }
 
@@ -87,19 +89,10 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 
 	//re-run weight calculations for the whole chain
 	//@TODO (optimization) we don't want to do this every time the system boots up
-	_, err = c.weigh(tx, 0)
+	err = c.weigh(tx, 0)
 	if err != nil {
 		return nil, gen, fmt.Errorf("failed to weigh chain blocks: %v", err)
 	}
-
-	//(re)create the tip state
-	_, tstate, err := c.state(tx, NilID)
-	if err != nil {
-		return nil, gen, fmt.Errorf("failed to re-build state from tip: %v", err)
-	}
-
-	// write tip state
-	atomic.StorePointer(&c.tstate, unsafe.Pointer(tstate))
 
 	//commit the genesis block and tip
 	if err := tx.Commit(); err != nil {
@@ -333,15 +326,10 @@ func (c *Chain) Append(b *Block) (err error) {
 	//      the total points we hand out per round it it not really effective to rank them anymore
 	//@TODO (optimization) we would like to add this limit using a vrf threshold so
 	//      honest members know they don't even need to send it
-	newTip, err := c.weigh(tx, b.Round)
+	//@TODO (optimization) we would rather not calculate the whole state again
+	err = c.weigh(tx, b.Round)
 	if err != nil {
 		return fmt.Errorf("failed to weigh rounds: %v", err)
-	}
-
-	//if this blocks is a new tip, set the state we're working with to it
-	//@TODO are there any race conditions between setting the tip and the newTip assertion?
-	if newTip {
-		atomic.StorePointer(&c.tstate, unsafe.Pointer(state))
 	}
 
 	// [MAJOR] distribute stake to all ancestors for finalization
@@ -351,7 +339,17 @@ func (c *Chain) Append(b *Block) (err error) {
 	// - update our current state to this finalized chain
 	// - set the finalized state
 
-	return tx.Commit()
+	//finally, attempt to commit
+	err = tx.Commit()
+	if err != nil {
+		if err == badger.ErrConflict {
+			return ErrAppendConflict
+		}
+
+		return fmt.Errorf("failed to commit append tx: %v", err)
+	}
+
+	return
 }
 
 //Tip returns the current heaviest chain of blocks
@@ -381,18 +379,42 @@ func (c *Chain) Read(id ID) (b *Block, weight uint64, err error) {
 	return b, w, nil
 }
 
-// Weigh all blocks from the the specified round upwards and change the current
-// longest tip to the block with the most weight behind it.
-func (c *Chain) Weigh(nr uint64) (newtip bool, err error) {
+//ForEach will call f for each block in all rounds >= to the start round
+func (c *Chain) ForEach(start uint64, f func(id ID, b *Block) (err error)) (err error) {
 	tx := c.store.CreateTx(true)
 	defer tx.Discard()
-	return c.weigh(tx, nr)
+	return c.forEach(tx, start, f)
 }
 
-func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
-	tip, tipw, err := tx.ReadTip()
+func (c *Chain) forEach(tx Tx, start uint64, f func(id ID, b *Block) (err error)) (err error) {
+	for rn := start; rn <= tx.MaxRound(); rn++ {
+		if err = tx.Round(rn, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
+			return f(id, b)
+		}); err != nil {
+			return fmt.Errorf("failed to read blocks from round %d: %v", rn, err)
+		}
+	}
+
+	return
+}
+
+// Weigh all blocks from the the specified round upwards and change the current
+// longest tip to the block with the most weight behind it.
+func (c *Chain) Weigh(nr uint64) (err error) {
+	tx := c.store.CreateTx(true)
+	defer tx.Discard()
+	err = c.weigh(tx, nr)
 	if err != nil {
-		return newtip, fmt.Errorf("failed to read current tip: %v", err)
+		return
+	}
+
+	return tx.Commit()
+}
+
+func (c *Chain) weigh(tx Tx, nr uint64) (err error) {
+	_, tipw, err := tx.ReadTip()
+	if err != nil {
+		return fmt.Errorf("failed to read current tip: %v", err)
 	}
 
 	for rn := nr; rn <= tx.MaxRound(); rn++ {
@@ -408,7 +430,7 @@ func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
 			blocks = append(blocks, &bl{rank: rank, prev: b.Prev, id: id})
 			return nil
 		}); err != nil {
-			return newtip, fmt.Errorf("failed to read blocks from round: %v", err)
+			return fmt.Errorf("failed to read blocks from round: %v", err)
 		}
 
 		//sort by rank
@@ -423,7 +445,7 @@ func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
 			prevw, ok := c.weights[b.prev]
 			if !ok {
 				c.wmu.Unlock()
-				return newtip, fmt.Errorf("encountered a prev block '%.10x' without a weight", b.prev)
+				return fmt.Errorf("encountered a prev block '%.10x' without a weight", b.prev)
 			}
 
 			sumw := prevw + w
@@ -433,17 +455,21 @@ func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
 			//as the new tip. By also replacing on equal we prefer newly calculated
 			//weights over the old maximum
 			if sumw >= tipw {
-				if tip != b.id {
-					newtip = true
-				}
 
-				tip = b.id
-				tipw = sumw
-
-				err = tx.WriteTip(tip, tipw)
+				//write the new tip
+				err = tx.WriteTip(b.id, sumw)
 				if err != nil {
-					return newtip, fmt.Errorf("failed to write new tip: %v", err)
+					return fmt.Errorf("failed to write new tip: %v", err)
 				}
+
+				//build state for new tip
+				_, tstate, err := c.state(tx, NilID)
+				if err != nil {
+					return fmt.Errorf("failed to re-build state from tip: %v", err)
+				}
+
+				//atomically assign the state
+				atomic.StorePointer(&c.tstate, unsafe.Pointer(tstate))
 			}
 		}
 

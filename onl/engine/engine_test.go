@@ -1,10 +1,11 @@
 package engine_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -12,6 +13,20 @@ import (
 	"github.com/advanderveer/27067dd17/onl/engine"
 	"github.com/advanderveer/go-test"
 )
+
+func drawPNG(t *testing.T, e *engine.Engine, name string) {
+	f, err := os.Create(name)
+	test.Ok(t, err)
+	defer f.Close()
+
+	buf := bytes.NewBuffer(nil)
+	test.Ok(t, e.Draw(buf))
+
+	cmd := exec.Command("dot", "-Tpng")
+	cmd.Stdin = buf
+	cmd.Stdout = f
+	test.Ok(t, cmd.Run())
+}
 
 type testClock uint64
 
@@ -171,14 +186,9 @@ func TestEngineWriterReplication(t *testing.T) {
 	//@TODO asset if .LastError() is empty
 }
 
-//Tests whether 3 engines writing come to consensus
-func TestEngine3WriterConsensus(t *testing.T) {
-
-	//testing variables
-	nWrites := uint64(20)
-	nRounds := 30
-	roundEvery := time.Millisecond * 3
-	writeEvery := time.Millisecond
+func TestEngine3WriteConsensusStepByStep(t *testing.T) {
+	nWrites := uint64(1)
+	nRounds := 3
 
 	//global memory oscillator
 	osc := engine.NewMemOscillator()
@@ -198,7 +208,7 @@ func TestEngine3WriterConsensus(t *testing.T) {
 		kv.DepositStake(idn3.PK(), 1, idn3.TokenPK())
 	}
 
-	//create engines with genesis state
+	//create engines with genesis state, starting in round 1
 	bc1, e1, clean1 := testEngine(t, osc, idn1, genf)
 	bc2, e2, clean2 := testEngine(t, osc, idn2, genf)
 	bc3, e3, clean3 := testEngine(t, osc, idn3, genf)
@@ -208,25 +218,20 @@ func TestEngine3WriterConsensus(t *testing.T) {
 	bc2.To(bc3)
 	bc3.To(bc1)
 
-	//start writing thread, high contention
-	go func() {
-		ctx := context.Background()
-		for j := uint64(0); j < nWrites; j++ {
-			time.Sleep(writeEvery)
+	//write to mempool one-time
+	for j := uint64(0); j < nWrites; j++ {
+		kb := make([]byte, 8)
+		binary.LittleEndian.PutUint64(kb, j)
 
-			kb := make([]byte, 8)
-			binary.LittleEndian.PutUint64(kb, j)
+		test.Ok(t, e1.Update(context.Background(), func(kv *onl.KV) { kv.Set(kb, []byte{0x01}) }))
+		test.Ok(t, e2.Update(context.Background(), func(kv *onl.KV) { kv.Set(kb, []byte{0x02}) }))
+		test.Ok(t, e3.Update(context.Background(), func(kv *onl.KV) { kv.Set(kb, []byte{0x03}) }))
+	}
 
-			test.Ok(t, e1.Update(ctx, func(kv *onl.KV) { kv.Set(kb, []byte{0x01}) }))
-			test.Ok(t, e2.Update(ctx, func(kv *onl.KV) { kv.Set(kb, []byte{0x02}) }))
-			test.Ok(t, e3.Update(ctx, func(kv *onl.KV) { kv.Set(kb, []byte{0x03}) }))
-		}
-	}()
-
-	//fire some rounds
+	//fire rounds
 	for i := 0; i < nRounds; i++ {
-		time.Sleep(roundEvery)
 		osc.Fire()
+		time.Sleep(time.Millisecond * 100)
 	}
 
 	//wrap it all up
@@ -234,27 +239,156 @@ func TestEngine3WriterConsensus(t *testing.T) {
 	clean2()
 	clean3()
 
-	//check if repication was successfull
+	//draw
+	drawPNG(t, e1, "e1.png")
+	drawPNG(t, e2, "e2.png")
+	drawPNG(t, e3, "e3.png")
+
+	//should all have the same tip
+	test.Equals(t, e1.Tip(), e2.Tip())
+	test.Equals(t, e1.Tip(), e3.Tip())
+
+	//check if replication was successfull
 	results := make([][3]byte, nWrites)
 	for j := uint64(0); j < nWrites; j++ {
 		kb := make([]byte, 8)
 		binary.LittleEndian.PutUint64(kb, j)
 
-		test.Ok(t, e1.View(func(kv *onl.KV) { results[j][0] = kv.Get(kb)[0] }))
-		test.Ok(t, e2.View(func(kv *onl.KV) { results[j][1] = kv.Get(kb)[0] }))
-		test.Ok(t, e3.View(func(kv *onl.KV) { results[j][2] = kv.Get(kb)[0] }))
+		test.Ok(t, e1.View(func(kv *onl.KV) {
+			d := kv.Get(kb)
+			if len(d) < 1 {
+				return
+			}
+
+			results[j][0] = kv.Get(kb)[0]
+		}))
+
+		test.Ok(t, e2.View(func(kv *onl.KV) {
+			d := kv.Get(kb)
+			if len(d) < 1 {
+				return
+			}
+
+			results[j][1] = kv.Get(kb)[0]
+		}))
+
+		test.Ok(t, e3.View(func(kv *onl.KV) {
+			d := kv.Get(kb)
+			if len(d) < 1 {
+				return
+			}
+
+			results[j][2] = kv.Get(kb)[0]
+		}))
 	}
 
-	//print and test results results
+	//@TODO why are writes re-added to every block
+
+	//print and test results
 	for i, r := range results {
-		fmt.Println(i, r)
-		// if r[0] != r[1] || r[2] != r[0] {
-		// 	t.Errorf("didn't reach consensus on write %d: %v", i, r)
-		// }
+		if r[0] != r[1] || r[2] != r[0] {
+			t.Errorf("didn't reach consensus on write %d: %v", i, r)
+		}
 	}
-
-	//@TODO we expect all kv stores to be the same
-	//@TODO we expect far less writes per block after some rounds as the should
-	//      all of them should conflict
 
 }
+
+//Tests whether 3 engines writing come to consensus
+// func TestEngine3WriterConsensus(t *testing.T) {
+//
+// 	//testing variables
+// 	nWrites := uint64(200)
+// 	nRounds := 10
+// 	roundEvery := time.Millisecond * 2
+// 	writeEvery := time.Millisecond
+//
+// 	//global memory oscillator
+// 	osc := engine.NewMemOscillator()
+//
+// 	//setup the writing identities
+// 	idn1 := onl.NewIdentity([]byte{0x01})
+// 	idn2 := onl.NewIdentity([]byte{0x02})
+// 	idn3 := onl.NewIdentity([]byte{0x03})
+//
+// 	//create coinbases and deposits
+// 	genf := func(kv *onl.KV) {
+// 		kv.CoinbaseTransfer(idn1.PK(), 1)
+// 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
+// 		kv.CoinbaseTransfer(idn2.PK(), 1)
+// 		kv.DepositStake(idn2.PK(), 1, idn2.TokenPK())
+// 		kv.CoinbaseTransfer(idn3.PK(), 1)
+// 		kv.DepositStake(idn3.PK(), 1, idn3.TokenPK())
+// 	}
+//
+// 	//create engines with genesis state
+// 	bc1, e1, clean1 := testEngine(t, osc, idn1, genf)
+// 	bc2, e2, clean2 := testEngine(t, osc, idn2, genf)
+// 	bc3, e3, clean3 := testEngine(t, osc, idn3, genf)
+//
+// 	//create a ring topology bc1->bc2->bc3->bc1
+// 	bc1.To(bc2)
+// 	bc2.To(bc3)
+// 	bc3.To(bc1)
+//
+// 	//start writing thread, high contention
+// 	go func() {
+// 		ctx := context.Background()
+// 		for j := uint64(0); j < nWrites; j++ {
+// 			time.Sleep(writeEvery)
+//
+// 			kb := make([]byte, 8)
+// 			binary.LittleEndian.PutUint64(kb, j)
+//
+// 			test.Ok(t, e1.Update(ctx, func(kv *onl.KV) { kv.Set(kb, []byte{0x01}) }))
+// 			test.Ok(t, e2.Update(ctx, func(kv *onl.KV) { kv.Set(kb, []byte{0x02}) }))
+// 			test.Ok(t, e3.Update(ctx, func(kv *onl.KV) { kv.Set(kb, []byte{0x03}) }))
+// 		}
+// 	}()
+//
+// 	//fire some rounds
+// 	for i := 0; i < nRounds; i++ {
+// 		time.Sleep(roundEvery)
+// 		osc.Fire()
+// 	}
+//
+// 	//wrap it all up
+// 	clean1()
+// 	clean2()
+// 	clean3()
+//
+// 	//check if repication was successfull
+// 	results := make([][3]byte, nWrites)
+// 	for j := uint64(0); j < nWrites; j++ {
+// 		kb := make([]byte, 8)
+// 		binary.LittleEndian.PutUint64(kb, j)
+//
+// 		test.Ok(t, e1.View(func(kv *onl.KV) { results[j][0] = kv.Get(kb)[0] }))
+// 		test.Ok(t, e2.View(func(kv *onl.KV) { results[j][1] = kv.Get(kb)[0] }))
+// 		test.Ok(t, e3.View(func(kv *onl.KV) { results[j][2] = kv.Get(kb)[0] }))
+// 	}
+//
+// 	//print and test results results
+// 	for i, r := range results {
+// 		fmt.Println(i, r)
+// 		// if r[0] != r[1] || r[2] != r[0] {
+// 		// 	t.Errorf("didn't reach consensus on write %d: %v", i, r)
+// 		// }
+// 	}
+//
+// 	buf := bytes.NewBuffer(nil)
+// 	test.Ok(t, e3.Draw(buf))
+// 	drawPNG(t, buf, "e3.png")
+//
+// 	buf = bytes.NewBuffer(nil)
+// 	test.Ok(t, e2.Draw(buf))
+// 	drawPNG(t, buf, "e2.png")
+//
+// 	buf = bytes.NewBuffer(nil)
+// 	test.Ok(t, e3.Draw(buf))
+// 	drawPNG(t, buf, "e3.png")
+//
+// 	//@TODO we expect all kv stores to be the same
+// 	//@TODO we expect far less writes per block after some rounds as the should
+// 	//      all of them should conflict
+//
+// }

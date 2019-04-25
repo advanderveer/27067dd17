@@ -143,9 +143,7 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, b2.Hash(), chain.Tip())
 
 	//calling weigh shouldn't change anything
-	newt1, err := chain.Weigh(0)
-	test.Ok(t, err)
-	test.Equals(t, false, newt1)
+	test.Ok(t, chain.Weigh(0))
 
 	//block 2 should have over taken the blocks 1 ranking
 	b12, w2, err := chain.Read(b1.Hash())
@@ -159,6 +157,18 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, b2, b22)
 
 	test.Equals(t, b2.Hash(), chain.Tip())
+
+	t.Run("for each", func(t *testing.T) {
+		var saw []onl.ID
+		test.Ok(t, chain.ForEach(0, func(id onl.ID, b *onl.Block) error {
+			saw = append(saw, id)
+			return nil
+		}))
+
+		test.Equals(t, 3, len(saw))
+		test.Equals(t, gen, saw[0])
+	})
+
 }
 
 func tallRound(height, width uint64, t *testing.T) {
