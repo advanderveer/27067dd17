@@ -165,7 +165,7 @@ func (e *Engine) handleRound(clock onl.Clock, genesis onl.ID, round uint64) {
 	})
 
 	if stake < 1 {
-		return //no stake, no proposing for us
+		return //no stake, no proposing for us in this round
 	}
 
 	//mint a block for our current tip
@@ -241,7 +241,7 @@ func (e *Engine) handleBlock(b *onl.Block) {
 			}
 
 			e.logs.Printf("[INFO][%s] failed to append incoming block: %v", e.idn, err)
-			return
+			return //unexpected failure
 		}
 
 		break //append went through
@@ -305,7 +305,7 @@ func (e *Engine) Shutdown(ctx context.Context) (err error) {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-e.done: //1th subystem
+	case <-e.done: //1th subsystem
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

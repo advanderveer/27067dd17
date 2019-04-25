@@ -20,6 +20,10 @@ type Write struct {
 	//@TODO add signer pk to hash
 }
 
+func (op *Write) StartTS() uint64 {
+	return op.TxData.TimeStart
+}
+
 //Hash the operation
 func (op *Write) Hash() (id WID) {
 	h := sha256.New()
