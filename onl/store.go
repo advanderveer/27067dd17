@@ -29,8 +29,8 @@ type Store interface {
 
 //Tx is an ACID interaction with the store
 type Tx interface {
-	ReadTip() (tip ID, tipw uint64)
-	WriteTip(tip ID, tipw uint64)
+	ReadTip() (tip ID, tipw uint64, err error)
+	WriteTip(tip ID, tipw uint64) (err error)
 
 	Write(b *Block, stk *Stakes, rank *big.Int) (err error)
 	Read(id ID) (b *Block, stk *Stakes, rank *big.Int, err error)
@@ -51,12 +51,39 @@ type BadgerTx struct {
 	btx *badger.Txn
 }
 
-func (tx *BadgerTx) ReadTip() (tip ID, tipw uint64) {
+//ReadTip reads the currently stored tip from
+func (tx *BadgerTx) ReadTip() (tip ID, tipw uint64, err error) {
+	it, err := tx.btx.Get(tipKey())
+	if err != nil {
+		if err == badger.ErrKeyNotFound {
+			return tip, tipw, nil
+		}
+
+		return tip, tipw, fmt.Errorf("failed to read tip key: %v", err)
+	}
+
+	val, err := it.Value()
+	if err != nil {
+		return tip, tipw, fmt.Errorf("unable to read tip value: %v", err)
+	}
+
+	copy(tip[:], val) //first part is id
+	tipw = binary.BigEndian.Uint64(val[IDLen:])
 	return
 }
 
-func (tx *BadgerTx) WriteTip(tip ID, tipw uint64) {
+//WriteTip persists the tip information
+func (tx *BadgerTx) WriteTip(tip ID, tipw uint64) (err error) {
+	val := make([]byte, IDLen+8)
+	copy(val, tip[:])
+	binary.BigEndian.PutUint64(val[IDLen:], tipw)
 
+	err = tx.btx.Set(tipKey(), val)
+	if err != nil {
+		return fmt.Errorf("failed to set tip key: %v", err)
+	}
+
+	return
 }
 
 //MaxRound returns the max round that is currently stored
@@ -145,6 +172,11 @@ func decode(d []byte) (b *Block, stk *Stakes, rank *big.Int, err error) {
 }
 
 const blockBucket = "b/"
+const metaBucket = "m/"
+
+func tipKey() []byte {
+	return append([]byte(metaBucket), []byte("tip")...)
+}
 
 func roundPrefix(nr uint64) (prefix []byte) {
 	prefix = make([]byte, 8)

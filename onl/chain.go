@@ -20,14 +20,11 @@ type Chain struct {
 		id ID
 	}
 
-	//@TODO move weights and locking to a store so on boot we can just continue
-	//where we left off
-	tip     ID
-	tipw    uint64
+	//@TODO move weights to badger store
 	weights map[ID]uint64
 	wmu     sync.RWMutex
 
-	// smu    sync.RWMutex
+	//last tip state
 	tstate unsafe.Pointer //*State
 }
 
@@ -42,15 +39,17 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 	//genesis prev weight is 0
 	c.weights[NilID] = 0
 
-	//try to read genesis
+	//try to read genesis block and state
 	tx := c.store.CreateTx(true)
 	defer tx.Discard()
 
+	//then genesis stuff
 	if err := tx.Round(0, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
 		if c.genesis.Block != nil {
 			return fmt.Errorf("there is more then just the genesis block")
 		}
 
+		//read genesis block info
 		c.genesis.Block = b
 		c.genesis.Stakes = stk
 		c.genesis.id = id
@@ -73,19 +72,18 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 		}
 
 		c.genesis.Stakes = &Stakes{} //@TODO finalize block
+
+		//write the genesis block
 		if err := tx.Write(c.genesis.Block, c.genesis.Stakes, big.NewInt(1)); err != nil {
-			return nil, gen, fmt.Errorf("failed to write genesis block: " + err.Error())
+			return nil, gen, fmt.Errorf("failed to write genesis block: %v", err)
 		}
 
-		if err := tx.Commit(); err != nil {
-			return nil, gen, fmt.Errorf("failed to commit writing of genesis block: %v", err)
-		}
-
+		//set the tip tip to be the genesis block
 		c.genesis.id = c.genesis.Hash()
+		if err := tx.WriteTip(c.genesis.id, 0); err != nil {
+			return nil, gen, fmt.Errorf("failed to write genesis tip weight: %v", err)
+		}
 	}
-
-	//set the tip to the genesis block
-	c.tip = c.genesis.id
 
 	//re-run weight calculations for the whole chain
 	//@TODO (optimization) we don't want to do this every time the system boots up
@@ -94,14 +92,19 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 		return nil, gen, fmt.Errorf("failed to weigh chain blocks: %v", err)
 	}
 
-	//set the tip state we work with from the current tip
-	tstate, err := c.State(c.tip)
+	//(re)create the tip state
+	_, tstate, err := c.state(tx, NilID)
 	if err != nil {
 		return nil, gen, fmt.Errorf("failed to re-build state from tip: %v", err)
 	}
 
-	// atomic.StorePointer(addr, val)
+	// write tip state
 	atomic.StorePointer(&c.tstate, unsafe.Pointer(tstate))
+
+	//commit the genesis block and tip
+	if err := tx.Commit(); err != nil {
+		return nil, gen, fmt.Errorf("failed to commit writing of genesis block: %v", err)
+	}
 
 	return c, c.genesis.id, nil
 }
@@ -109,8 +112,9 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 //Genesis returns the genesis block
 func (c *Chain) Genesis() (b *Block) { return c.genesis.Block }
 
-// State returns the state represented by the chain walking back to the genesis
-func (c *Chain) State(id ID) (s *State, err error) {
+// State returns the state represented by the chain walking back to the genesis.
+// If the provided id is the NilID it will create a state from the current tip.
+func (c *Chain) State(id ID) (tip ID, s *State, err error) {
 
 	//@TODO (optimization) we would like to keep a cache of the state on the longest
 	//finalized chain
@@ -120,16 +124,30 @@ func (c *Chain) State(id ID) (s *State, err error) {
 	return c.state(tx, id)
 }
 
-func (c *Chain) state(tx Tx, id ID) (s *State, err error) {
+func (c *Chain) state(tx Tx, id ID) (tip ID, s *State, err error) {
+	tip, _, err = tx.ReadTip()
+	if err != nil {
+		return NilID, nil, fmt.Errorf("failed to read tip to state from: %v", err)
+	}
+
+	if tip == NilID {
+		return NilID, nil, fmt.Errorf("no tip available, please specify explicitely")
+	}
+
+	if id == NilID {
+		id = tip
+	}
+
 	var log [][]*Write
 	if err = c.walk(tx, id, func(id ID, bb *Block, stk *Stakes, rank *big.Int) error {
 		log = append([][]*Write{bb.Writes}, log...)
 		return nil
 	}); err != nil {
-		return nil, err
+		return NilID, nil, err
 	}
 
-	return NewState(log)
+	s, err = NewState(log)
+	return tip, s, err
 }
 
 // Walk a chain from 'id' towards the genesis.
@@ -262,7 +280,7 @@ func (c *Chain) Append(b *Block) (err error) {
 
 	//reconstruct the state to validate the writes in the new block
 	//@TODO we're walking again here but we would like to re-use our code also
-	state, err := c.state(tx, b.Prev)
+	_, state, err := c.state(tx, b.Prev)
 	if err != nil {
 		return ErrStateReconstruction
 	}
@@ -337,10 +355,11 @@ func (c *Chain) Append(b *Block) (err error) {
 }
 
 //Tip returns the current heaviest chain of blocks
-func (c *Chain) Tip() ID {
-	c.wmu.RLock()
-	defer c.wmu.RUnlock()
-	return c.tip
+func (c *Chain) Tip() (tip ID) {
+	tx := c.store.CreateTx(false)
+	defer tx.Discard()
+	tip, _, _ = tx.ReadTip()
+	return
 }
 
 //Read a block from the chain
@@ -365,12 +384,17 @@ func (c *Chain) Read(id ID) (b *Block, weight uint64, err error) {
 // Weigh all blocks from the the specified round upwards and change the current
 // longest tip to the block with the most weight behind it.
 func (c *Chain) Weigh(nr uint64) (newtip bool, err error) {
-	tx := c.store.CreateTx(false)
+	tx := c.store.CreateTx(true)
 	defer tx.Discard()
 	return c.weigh(tx, nr)
 }
 
 func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
+	tip, tipw, err := tx.ReadTip()
+	if err != nil {
+		return newtip, fmt.Errorf("failed to read current tip: %v", err)
+	}
+
 	for rn := nr; rn <= tx.MaxRound(); rn++ {
 		type bl struct {
 			prev ID
@@ -408,13 +432,18 @@ func (c *Chain) weigh(tx Tx, nr uint64) (newtip bool, err error) {
 			//if sum-weight heigher or equal the the current tip sum-weight use that
 			//as the new tip. By also replacing on equal we prefer newly calculated
 			//weights over the old maximum
-			if sumw >= c.tipw {
-				if c.tip != b.id {
+			if sumw >= tipw {
+				if tip != b.id {
 					newtip = true
 				}
 
-				c.tip = b.id
-				c.tipw = sumw
+				tip = b.id
+				tipw = sumw
+
+				err = tx.WriteTip(tip, tipw)
+				if err != nil {
+					return newtip, fmt.Errorf("failed to write new tip: %v", err)
+				}
 			}
 		}
 

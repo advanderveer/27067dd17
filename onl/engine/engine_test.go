@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -245,13 +246,12 @@ func TestEngine3WriterConsensus(t *testing.T) {
 	}
 
 	//print and test results results
-	_ = results
-	// for i, r := range results {
-	// 	fmt.Println(i, r)
-	// 	if r[0] != r[1] || r[2] != r[0] {
-	// 		t.Errorf("didn't reach consensus on write %d: %v", i, r)
-	// 	}
-	// }
+	for i, r := range results {
+		fmt.Println(i, r)
+		// if r[0] != r[1] || r[2] != r[0] {
+		// 	t.Errorf("didn't reach consensus on write %d: %v", i, r)
+		// }
+	}
 
 	//@TODO we expect all kv stores to be the same
 	//@TODO we expect far less writes per block after some rounds as the should

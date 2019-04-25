@@ -22,6 +22,20 @@ func TestBadgerReadWriteStore(t *testing.T) {
 	tx := s.CreateTx(true)
 	defer tx.Discard()
 
+	t.Run("tip should be zero values", func(t *testing.T) {
+		tip1, tipw1, err := tx.ReadTip()
+		test.Ok(t, err)
+		test.Equals(t, onl.NilID, tip1)
+		test.Equals(t, uint64(0), tipw1)
+
+		test.Ok(t, tx.WriteTip(bid1, 100))
+		tip2, tipw2, err := tx.ReadTip()
+		test.Ok(t, err)
+
+		test.Equals(t, bid1, tip2)
+		test.Equals(t, uint64(100), tipw2)
+	})
+
 	test.Equals(t, uint64(0), tx.MaxRound())
 
 	test.Ok(t, tx.Write(b2, nil, big.NewInt(2)))

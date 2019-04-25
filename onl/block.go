@@ -11,6 +11,9 @@ import (
 	"github.com/advanderveer/27067dd17/vrf/ed25519"
 )
 
+//IDLen is the id length
+const IDLen = sha256.Size
+
 //PK is a fixed-size public key identity
 type PK [32]byte
 
@@ -18,7 +21,7 @@ type PK [32]byte
 var NilID = ID{}
 
 //ID of a block is determined by hashing it
-type ID [sha256.Size]byte
+type ID [IDLen]byte
 
 //Bytes returns the underlying bytes as a slice
 func (id ID) Bytes() []byte { return id[:] }

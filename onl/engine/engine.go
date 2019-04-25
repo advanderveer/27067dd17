@@ -147,20 +147,7 @@ func (e *Engine) Handle(msg *Msg) {
 func (e *Engine) handleRound(clock onl.Clock, genesis onl.ID, round uint64) {
 
 	//read tip and current state from chain
-	tip := e.chain.Tip()
-
-	//@TODO (#1) sometimes the newly appointed tip doesn't exist yet? probably because
-	//the tip is not part of the storage transaction (wich takes longer). Fix that
-	//instead of waiting here with an ugly hack
-	for {
-		_, _, err := e.chain.Read(tip)
-		if err == nil {
-			break
-		}
-	}
-
-	fmt.Printf("%s round %d, tip round: %d\n", e.idn, round, tip.Round())
-	state, err := e.chain.State(tip)
+	tip, state, err := e.chain.State(onl.NilID)
 	if err != nil {
 		e.logs.Printf("[ERRO][%s] failed to rebuild state for round %d: %v", e.idn, round, err)
 		return

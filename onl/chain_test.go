@@ -25,8 +25,9 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	test.Equals(t, gen1, c1.Tip())
 
 	t.Run("read genesis state", func(t *testing.T) {
-		st2, err := c1.State(gen1)
+		tip, st2, err := c1.State(gen1)
 		test.Ok(t, err)
+		test.Equals(t, gen1, tip)
 
 		st2.View(func(kv *onl.KV) {
 			test.Equals(t, []byte{0x02}, kv.Tx.Get([]byte{0x01}))
@@ -204,10 +205,12 @@ func TestChainKVOperation(t *testing.T) {
 	idn := onl.NewIdentity([]byte{0x01})
 
 	//create a chain with genesis deposit and coinbase
-	chain, gen, _ := onl.NewChain(store, func(kv *onl.KV) {
+	chain, gen, err := onl.NewChain(store, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn.PK(), 1)
 		kv.DepositStake(idn.PK(), 1, idn.TokenPK())
 	})
+
+	test.Ok(t, err)
 
 	//create a write from the current genesis tip
 	w := chain.Update(func(kv *onl.KV) {
