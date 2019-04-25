@@ -29,6 +29,9 @@ type Store interface {
 
 //Tx is an ACID interaction with the store
 type Tx interface {
+	ReadTip() (tip ID, tipw uint64)
+	WriteTip(tip ID, tipw uint64)
+
 	Write(b *Block, stk *Stakes, rank *big.Int) (err error)
 	Read(id ID) (b *Block, stk *Stakes, rank *big.Int, err error)
 	Round(nr uint64, f func(id ID, b *Block, stk *Stakes, rank *big.Int) error) (err error)
@@ -48,6 +51,14 @@ type BadgerTx struct {
 	btx *badger.Txn
 }
 
+func (tx *BadgerTx) ReadTip() (tip ID, tipw uint64) {
+	return
+}
+
+func (tx *BadgerTx) WriteTip(tip ID, tipw uint64) {
+
+}
+
 //MaxRound returns the max round that is currently stored
 func (tx *BadgerTx) MaxRound() (nr uint64) {
 	opt := badger.DefaultIteratorOptions
@@ -56,11 +67,11 @@ func (tx *BadgerTx) MaxRound() (nr uint64) {
 	iter := tx.btx.NewIterator(opt)
 	defer iter.Close()
 
-	for iter.Rewind(); iter.Valid(); iter.Next() {
-		kr := iter.Item().Key()[:8]
-		nr = binary.BigEndian.Uint64(kr)
-		nr = math.MaxUint64 - nr
-		return nr
+	prefix := []byte(blockBucket)
+
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+		id := key2id(iter.Item().Key())
+		return id.Round()
 	}
 
 	return
@@ -71,18 +82,13 @@ func (tx *BadgerTx) Round(nr uint64, f func(id ID, b *Block, stk *Stakes, rank *
 	opt := badger.DefaultIteratorOptions
 	opt.PrefetchSize = 10
 
-	prefix := make([]byte, 8)
-	binary.BigEndian.PutUint64(prefix, math.MaxUint64-nr)
-
+	prefix := roundPrefix(nr)
 	iter := tx.btx.NewIterator(opt)
 	defer iter.Close()
 
-	for iter.Seek(prefix); iter.Valid(); iter.Next() {
+	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 		item := iter.Item()
 		key := item.Key()
-		if !bytes.HasPrefix(key, prefix) {
-			break
-		}
 
 		d, err := item.Value()
 		if err != nil {
@@ -94,9 +100,7 @@ func (tx *BadgerTx) Round(nr uint64, f func(id ID, b *Block, stk *Stakes, rank *
 			return fmt.Errorf("failed to decode block data: %v", err)
 		}
 
-		var id ID
-		copy(id[:], key)
-
+		id := key2id(key)
 		err = f(id, b, fin, rank)
 		if err != nil {
 			return err
@@ -117,7 +121,7 @@ func (tx *BadgerTx) Write(b *Block, stk *Stakes, rank *big.Int) (err error) {
 		return fmt.Errorf("failed to encode block data: %v", err)
 	}
 
-	err = tx.btx.Set(b.Hash().Bytes(), buf.Bytes())
+	err = tx.btx.Set(id2key(b.Hash()), buf.Bytes())
 	if err != nil {
 		return fmt.Errorf("failed to set key data: %v", err)
 	}
@@ -140,9 +144,28 @@ func decode(d []byte) (b *Block, stk *Stakes, rank *big.Int, err error) {
 	return bb.Block, bb.Stakes, bb.Rank, nil
 }
 
+const blockBucket = "b/"
+
+func roundPrefix(nr uint64) (prefix []byte) {
+	prefix = make([]byte, 8)
+	binary.BigEndian.PutUint64(prefix, math.MaxUint64-nr)
+	return append([]byte(blockBucket), prefix...)
+}
+
+//key to bytes
+func id2key(id ID) []byte {
+	return append([]byte(blockBucket), id.Bytes()...)
+}
+
+//bytes to key
+func key2id(key []byte) (id ID) {
+	copy(id[:], key[len(blockBucket):])
+	return
+}
+
 //Read block data from the store and any finalization info
 func (tx *BadgerTx) Read(id ID) (b *Block, stk *Stakes, rank *big.Int, err error) {
-	it, err := tx.btx.Get(id.Bytes())
+	it, err := tx.btx.Get(id2key(id))
 	if err != nil {
 		if err == badger.ErrKeyNotFound {
 			return nil, nil, nil, ErrBlockNotExist

@@ -159,6 +159,7 @@ func (e *Engine) handleRound(clock onl.Clock, genesis onl.ID, round uint64) {
 		}
 	}
 
+	fmt.Printf("%s round %d, tip round: %d\n", e.idn, round, tip.Round())
 	state, err := e.chain.State(tip)
 	if err != nil {
 		e.logs.Printf("[ERRO][%s] failed to rebuild state for round %d: %v", e.idn, round, err)
