@@ -11,6 +11,7 @@ import (
 
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
+	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
 	"github.com/advanderveer/go-test"
 )
 
@@ -32,13 +33,13 @@ type testClock uint64
 
 func (c testClock) ReadUs() uint64 { return uint64(c) }
 
-func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *engine.MemBroadcast, e *engine.Engine, clean func()) {
+func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *broadcast.Mem, e *engine.Engine, clean func()) {
 	store, cleanstore := onl.TempBadgerStore()
 
 	chain, _, err := onl.NewChain(store, genf...)
 	test.Ok(t, err)
 
-	bc = engine.NewMemBroadcast(100)
+	bc = broadcast.NewMem(100)
 
 	e = engine.New(os.Stderr, bc, osc.Pulse(), idn, chain)
 	return bc, e, func() {
