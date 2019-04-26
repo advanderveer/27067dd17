@@ -59,13 +59,13 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	})
 	test.Ok(t, err)
 
-	b1 := idn1.Mint(testClock(1), g1, g1, 1)
+	b1 := idn1.Mint(1, g1, g1, 1)
 	idn1.Sign(b1)
 
 	test.Ok(t, c1.Append(b1))
 	test.Equals(t, b1.Hash(), c1.Tip())
 
-	b2 := idn1.Mint(testClock(2), b1.Hash(), g1, 2)
+	b2 := idn1.Mint(2, b1.Hash(), g1, 2)
 	idn1.Sign(b2)
 
 	test.Ok(t, c1.Append(b2))
@@ -128,7 +128,7 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, b0, chain.Genesis())
 
 	clock := onl.NewWallClock()
-	b1 := idn1.Mint(clock, gen, gen, 1)
+	b1 := idn1.Mint(clock.ReadUs(), gen, gen, 1)
 	idn1.Sign(b1)
 	test.Ok(t, chain.Append(b1))
 
@@ -137,7 +137,7 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, uint64(2000), w1)
 	test.Equals(t, b1, b11)
 
-	b2 := idn2.Mint(clock, gen, gen, 1)
+	b2 := idn2.Mint(clock.ReadUs(), gen, gen, 1)
 	idn2.Sign(b2)
 	test.Ok(t, chain.Append(b2))
 	test.Equals(t, b2.Hash(), chain.Tip())
@@ -195,7 +195,7 @@ func tallRound(height, width uint64, t *testing.T) {
 		tip := chain.Tip()
 
 		for _, idn := range idns {
-			b := idn.Mint(clock, tip, gen, j)
+			b := idn.Mint(clock.ReadUs(), tip, gen, j)
 			idn.Sign(b)
 
 			test.Ok(t, chain.Append(b))
@@ -228,7 +228,7 @@ func TestChainKVOperation(t *testing.T) {
 	})
 
 	//mint a block ourselves, add the write
-	b := idn.Mint(testClock(1), gen, gen, 1)
+	b := idn.Mint(1, gen, gen, 1)
 	b.AppendWrite(w)
 
 	//sign the block

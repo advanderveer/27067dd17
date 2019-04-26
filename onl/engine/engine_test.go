@@ -29,10 +29,6 @@ func drawPNG(t *testing.T, e *engine.Engine, name string) {
 	test.Ok(t, cmd.Run())
 }
 
-type testClock uint64
-
-func (c testClock) ReadUs() uint64 { return uint64(c) }
-
 func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *broadcast.Mem, e *engine.Engine, clean func()) {
 	store, cleanstore := onl.TempBadgerStore()
 

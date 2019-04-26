@@ -70,7 +70,7 @@ func New(logw io.Writer, bc Broadcast, p Pulse, idn *onl.Identity, c *onl.Chain)
 			round := atomic.AddUint64(&e.round, 1)
 
 			//handle round
-			e.handleRound(clock, e.genesis, round)
+			e.handleRound(clock.ReadUs(), e.genesis, round)
 
 			//@TODO enable random syncing of old blocks
 		}
@@ -149,7 +149,7 @@ func (e *Engine) Handle(msg *Msg) {
 	}
 }
 
-func (e *Engine) handleRound(clock onl.Clock, genesis onl.ID, round uint64) {
+func (e *Engine) handleRound(ts uint64, genesis onl.ID, round uint64) {
 
 	//read tip and current state from chain
 	tip, state, err := e.chain.State(onl.NilID)
@@ -169,7 +169,7 @@ func (e *Engine) handleRound(clock onl.Clock, genesis onl.ID, round uint64) {
 	}
 
 	//mint a block for our current tip
-	b := e.idn.Mint(clock, tip, genesis, round)
+	b := e.idn.Mint(ts, tip, genesis, round)
 
 	//try to apply random writes from the mempool, if they work include until max is reached
 	e.mempoolmu.RLock()

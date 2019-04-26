@@ -16,8 +16,8 @@ func TestBadgerReadWriteStore(t *testing.T) {
 	defer clean()
 
 	idn1 := onl.NewIdentity([]byte{0x01})
-	b1 := idn1.Mint(testClock(1), bid1, bid2, 1)
-	b2 := idn1.Mint(testClock(2), b1.Hash(), b1.Hash(), 2)
+	b1 := idn1.Mint(1, bid1, bid2, 1)
+	b2 := idn1.Mint(2, b1.Hash(), b1.Hash(), 2)
 
 	tx := s.CreateTx(true)
 	defer tx.Discard()

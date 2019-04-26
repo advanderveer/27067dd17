@@ -56,8 +56,8 @@ func (inj *Injector) Collect() []*engine.Msg {
 }
 
 // Mint a block and broadcast it to the network
-func (inj *Injector) Mint(c onl.Clock, prev, prevf onl.ID, round uint64) (b *onl.Block) {
-	b = inj.idn.Mint(c, prev, prevf, round)
+func (inj *Injector) Mint(ts uint64, prev, prevf onl.ID, round uint64) (b *onl.Block) {
+	b = inj.idn.Mint(ts, prev, prevf, round)
 	err := inj.Write(&engine.Msg{Block: b})
 	if err != nil {
 		panic("failed to inject proposal: " + err.Error())

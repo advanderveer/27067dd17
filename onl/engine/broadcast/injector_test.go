@@ -27,7 +27,7 @@ func TestInjectorVoting(t *testing.T) {
 
 	t.Run("injector minting", func(t *testing.T) {
 		t0 := time.Now()
-		b1 := inj1.Mint(testClock(1), id1, id1, 1)
+		b1 := inj1.Mint(1, id1, id1, 1)
 
 		msg := &engine.Msg{}
 		test.Ok(t, bc1.Read(msg))

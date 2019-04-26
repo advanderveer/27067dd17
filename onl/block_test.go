@@ -25,10 +25,9 @@ func init() {
 }
 
 func TestBlockHashing(t *testing.T) {
-	c1 := testClock(1)
 	idn1 := onl.NewIdentity([]byte{0x01})
 
-	b1 := idn1.Mint(c1, bid1, bid2, 1)
+	b1 := idn1.Mint(1, bid1, bid2, 1)
 	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
 	test.Equals(t, "fffffffffffffffe9443880e", fmt.Sprintf("%.12x", b1.Hash()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
@@ -72,7 +71,7 @@ func TestConsistentWritesHashing(t *testing.T) {
 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK()) //then deposit it
 	})
 
-	b1 := idn1.Mint(testClock(1), bid1, bid1, 1)
+	b1 := idn1.Mint(1, bid1, bid1, 1)
 	b1.AppendWrite(w1)
 	for i := 0; i < 100; i++ { //should hash consistently
 		test.Equals(t, b1.Hash(), b1.Hash())
@@ -80,9 +79,8 @@ func TestConsistentWritesHashing(t *testing.T) {
 }
 
 func TestBlockMintingSigningVerification(t *testing.T) {
-	c1 := testClock(1)
 	idn1 := onl.NewIdentity([]byte{0x01})
-	b1 := idn1.Mint(c1, bid1, bid2, 1)
+	b1 := idn1.Mint(1, bid1, bid2, 1)
 	test.Equals(t, false, b1.VerifySignature())
 
 	idn1.Sign(b1)
@@ -103,7 +101,7 @@ func TestBlockMintingSigningVerification(t *testing.T) {
 
 func TestBlockRanking(t *testing.T) {
 	idn1 := onl.NewIdentity([]byte{0x01})
-	b1 := idn1.Mint(testClock(1), bid1, bid2, 1)
+	b1 := idn1.Mint(1, bid1, bid2, 1)
 
 	test.Equals(t, "0", b1.Rank(0).Text(10)) //should equal exactly 0
 	test.Equals(t, "97552841951904930067318056973531093736152646717171940036091344696617083484138", b1.Rank(1).Text(10))
