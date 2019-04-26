@@ -39,7 +39,7 @@ func (bc *Mem) WithLatency(min, max time.Duration) {
 	bc.maxl = max
 }
 
-//To will add another broadcast endpoint this endpoint will write messages to
+//To will add another broadcast endpoint for this endpoint to write messages to
 func (bc *Mem) To(peers ...*Mem) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
