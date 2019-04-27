@@ -5,10 +5,15 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/go-test"
 )
+
+func ts() uint64 {
+	return uint64(time.Now().UnixNano() / (10 ^ 6))
+}
 
 func TestChainCreationAndGenesis(t *testing.T) {
 	s1, clean := onl.TempBadgerStore()
@@ -127,8 +132,7 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, uint64(1000), w0)
 	test.Equals(t, b0, chain.Genesis())
 
-	clock := onl.NewWallClock()
-	b1 := idn1.Mint(clock.ReadUs(), gen, gen, 1)
+	b1 := idn1.Mint(ts(), gen, gen, 1)
 	idn1.Sign(b1)
 	test.Ok(t, chain.Append(b1))
 
@@ -137,7 +141,7 @@ func TestRoundWeigh(t *testing.T) {
 	test.Equals(t, uint64(2000), w1)
 	test.Equals(t, b1, b11)
 
-	b2 := idn2.Mint(clock.ReadUs(), gen, gen, 1)
+	b2 := idn2.Mint(ts(), gen, gen, 1)
 	idn2.Sign(b2)
 	test.Ok(t, chain.Append(b2))
 	test.Equals(t, b2.Hash(), chain.Tip())
@@ -190,12 +194,11 @@ func tallRound(height, width uint64, t *testing.T) {
 	})
 	test.Ok(t, err)
 
-	clock := onl.NewWallClock()
 	for j := uint64(1); j <= width; j++ {
 		tip := chain.Tip()
 
 		for _, idn := range idns {
-			b := idn.Mint(clock.ReadUs(), tip, gen, j)
+			b := idn.Mint(ts(), tip, gen, j)
 			idn.Sign(b)
 
 			test.Ok(t, chain.Append(b))

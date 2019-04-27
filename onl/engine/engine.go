@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"sync"
-	"sync/atomic"
 
 	"github.com/advanderveer/27067dd17/onl"
 )
@@ -15,12 +14,11 @@ import (
 type Engine struct {
 	bc      Broadcast
 	logs    *log.Logger
-	pulse   Pulse
+	clock   Clock
 	idn     *onl.Identity
 	done    chan struct{}
 	chain   *onl.Chain
 	ooo     *OutOfOrder
-	round   uint64
 	maxw    int
 	genesis onl.ID
 
@@ -29,15 +27,14 @@ type Engine struct {
 }
 
 // New initiates an engine
-func New(logw io.Writer, bc Broadcast, p Pulse, idn *onl.Identity, c *onl.Chain) (e *Engine) {
+func New(logw io.Writer, bc Broadcast, clock Clock, idn *onl.Identity, c *onl.Chain) (e *Engine) {
 	e = &Engine{
 		idn:   idn,
 		bc:    bc,
-		pulse: p,
+		clock: clock,
 		done:  make(chan struct{}, 2),
 		logs:  log.New(logw, "", 0),
 		chain: c,
-		round: 1,
 		maxw:  10, //@TODO make configurable, or measure total block size in MiB
 
 		//for inspiration about mempool handling in bitcoin:
@@ -55,22 +52,17 @@ func New(logw io.Writer, bc Broadcast, p Pulse, idn *onl.Identity, c *onl.Chain)
 	//@TODO make it possible for a member to catch up to the correct round of the network
 	//@TODO start a process that allows out of sync members to catch up with missing blocks
 
-	//round switching
+	//round progress
 	go func() {
-		clock := onl.NewWallClock()
-
 		for {
-			err := e.pulse.Next()
+			round, ts, err := e.clock.Next()
 			if err == io.EOF {
-				e.logs.Printf("[INFO][%s] read EOF from pulse, shutting down pulse handling at round %d", e.idn, e.round)
+				e.logs.Printf("[INFO][%s] read EOF from pulse, shutting down pulse handling at round %d", e.idn, round)
 				break
 			}
 
-			//increment round
-			round := atomic.AddUint64(&e.round, 1)
-
 			//handle round
-			e.handleRound(clock.ReadUs(), e.genesis, round)
+			e.handleRound(round, ts)
 
 			//@TODO enable random syncing of old blocks
 		}
@@ -134,7 +126,7 @@ func (e *Engine) Update(ctx context.Context, f func(kv *onl.KV)) (err error) {
 
 //Round returns the current round the engine is on
 func (e *Engine) Round() uint64 {
-	return atomic.LoadUint64(&e.round)
+	return e.clock.Round()
 }
 
 //Handle a single message, assumes that is called in-order
@@ -149,7 +141,8 @@ func (e *Engine) Handle(msg *Msg) {
 	}
 }
 
-func (e *Engine) handleRound(ts uint64, genesis onl.ID, round uint64) {
+func (e *Engine) handleRound(round, ts uint64) {
+	e.logs.Printf("[INFO][%s] entered round %d", e.idn, round)
 
 	//read tip and current state from chain
 	tip, state, err := e.chain.State(onl.NilID)
@@ -169,7 +162,7 @@ func (e *Engine) handleRound(ts uint64, genesis onl.ID, round uint64) {
 	}
 
 	//mint a block for our current tip
-	b := e.idn.Mint(ts, tip, genesis, round)
+	b := e.idn.Mint(ts, tip, e.genesis, round)
 
 	//try to apply random writes from the mempool, if they work include until max is reached
 	e.mempoolmu.RLock()
@@ -223,7 +216,7 @@ func (e *Engine) handleWrite(w *onl.Write) {
 func (e *Engine) handleBlock(b *onl.Block) {
 
 	//check if the block is for a round we didn't reach yet
-	round := e.Round()
+	round := e.clock.Round()
 	if b.Round > round {
 		e.logs.Printf("[INFO][%s] received block from round %d while we're at %d, skipping", e.idn, b.Round, round)
 		return
@@ -297,7 +290,7 @@ func (e *Engine) Shutdown(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to close broadcast: %v", err)
 	}
 
-	err = e.pulse.Close()
+	err = e.clock.Close()
 	if err != nil {
 		return fmt.Errorf("failed to close pulse: %v", err)
 	}

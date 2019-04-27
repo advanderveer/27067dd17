@@ -12,6 +12,7 @@ import (
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
+	"github.com/advanderveer/27067dd17/onl/engine/clock"
 	"github.com/advanderveer/go-test"
 )
 
@@ -29,7 +30,7 @@ func drawPNG(t *testing.T, e *engine.Engine, name string) {
 	test.Ok(t, cmd.Run())
 }
 
-func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *broadcast.Mem, e *engine.Engine, clean func()) {
+func testEngine(t *testing.T, osc *clock.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *broadcast.Mem, e *engine.Engine, clean func()) {
 	store, cleanstore := onl.TempBadgerStore()
 
 	chain, _, err := onl.NewChain(store, genf...)
@@ -37,7 +38,7 @@ func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf
 
 	bc = broadcast.NewMem(100)
 
-	e = engine.New(os.Stderr, bc, osc.Pulse(), idn, chain)
+	e = engine.New(os.Stderr, bc, osc.Clock(), idn, chain)
 	return bc, e, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancel()
@@ -49,7 +50,7 @@ func testEngine(t *testing.T, osc *engine.MemOscillator, idn *onl.Identity, genf
 
 func TestEngineEmptyRounds(t *testing.T) {
 	idn := onl.NewIdentity([]byte{0x01})
-	osc := engine.NewMemOscillator()
+	osc := clock.NewMemOscillator()
 	_, e1, clean1 := testEngine(t, osc, idn)
 	for i := 0; i < 100; i++ {
 		osc.Fire()
@@ -64,7 +65,7 @@ func TestEngineWritingByItself(t *testing.T) {
 	nWrites := uint64(50)
 
 	idn := onl.NewIdentity([]byte{0x01})
-	osc := engine.NewMemOscillator()
+	osc := clock.NewMemOscillator()
 	_, e1, clean1 := testEngine(t, osc, idn, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn.PK(), 1)
 		kv.DepositStake(idn.PK(), 1, idn.TokenPK())
@@ -116,7 +117,7 @@ func TestEngineWriterReplication(t *testing.T) {
 	nWrites := uint64(20)
 
 	//global memory oscillator
-	osc := engine.NewMemOscillator()
+	osc := clock.NewMemOscillator()
 
 	//one identity will be writing blocks
 	idn1 := onl.NewIdentity([]byte{0x01})
@@ -188,7 +189,7 @@ func TestEngine3WriteConsensusStepByStep(t *testing.T) {
 	nRounds := 3
 
 	//global memory oscillator
-	osc := engine.NewMemOscillator()
+	osc := clock.NewMemOscillator()
 
 	//setup the writing identities
 	idn1 := onl.NewIdentity([]byte{0x01})
