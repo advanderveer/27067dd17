@@ -36,6 +36,7 @@ func TestBadgerReadWriteStore(t *testing.T) {
 		test.Equals(t, uint64(100), tipw2)
 	})
 
+	test.Equals(t, uint64(0), tx.MinRound())
 	test.Equals(t, uint64(0), tx.MaxRound())
 
 	test.Ok(t, tx.Write(b2, nil, big.NewInt(2)))
@@ -45,7 +46,9 @@ func TestBadgerReadWriteStore(t *testing.T) {
 	tx = s.CreateTx(false)
 	defer tx.Discard()
 
+	test.Equals(t, uint64(1), tx.MinRound())
 	test.Equals(t, uint64(2), tx.MaxRound())
+
 	b2, _, rank1, err := tx.Read(b1.Hash())
 	test.Ok(t, err)
 	test.Equals(t, b1, b2)

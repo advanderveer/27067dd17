@@ -31,7 +31,7 @@ type Chain struct {
 }
 
 //NewChain creates a new Chain
-func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
+func NewChain(s Store, genr uint64, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 	c = &Chain{
 		points:  1000, //@TODO make this configurable?
 		store:   s,
@@ -46,7 +46,7 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 	defer tx.Discard()
 
 	//then genesis stuff
-	if err := tx.Round(0, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
+	if err := tx.Round(genr, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
 		if c.genesis.Block != nil {
 			return fmt.Errorf("there is more then just the genesis block")
 		}
@@ -62,7 +62,10 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 
 	//if no genesis could be read, create from empty state
 	if c.genesis.Block == nil {
-		c.genesis.Block = &Block{Token: []byte("vi veri veniversum vivus vici")}
+		c.genesis.Block = &Block{
+			Token: []byte("vi veri veniversum vivus vici"),
+			Round: genr,
+		}
 
 		st, err := NewState(nil)
 		if err != nil {
@@ -89,7 +92,7 @@ func NewChain(s Store, genfs ...func(kv *KV)) (c *Chain, gen ID, err error) {
 
 	//re-run weight calculations for the whole chain
 	//@TODO (optimization) we don't want to do this every time the system boots up
-	err = c.weigh(tx, 0)
+	err = c.weigh(tx, genr)
 	if err != nil {
 		return nil, gen, fmt.Errorf("failed to weigh chain blocks: %v", err)
 	}
@@ -387,6 +390,12 @@ func (c *Chain) ForEach(start uint64, f func(id ID, b *Block) (err error)) (err 
 }
 
 func (c *Chain) forEach(tx Tx, start uint64, f func(id ID, b *Block) (err error)) (err error) {
+	if start == 0 {
+		//when zero, the user either states it is acutally zero in which case the following operation
+		//does nothing or the users means it is the min round
+		start = tx.MinRound()
+	}
+
 	for rn := start; rn <= tx.MaxRound(); rn++ {
 		if err = tx.Round(rn, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
 			return f(id, b)

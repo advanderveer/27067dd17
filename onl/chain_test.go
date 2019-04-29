@@ -19,7 +19,7 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	s1, clean := onl.TempBadgerStore()
 	defer clean()
 
-	c1, gen1, err := onl.NewChain(s1, func(kv *onl.KV) {
+	c1, gen1, err := onl.NewChain(s1, 0, func(kv *onl.KV) {
 		kv.Tx.Set([]byte{0x01}, []byte{0x02})
 	})
 
@@ -40,7 +40,7 @@ func TestChainCreationAndGenesis(t *testing.T) {
 	})
 
 	t.Run("re-apply to second chain", func(t *testing.T) {
-		c2, gen2, err := onl.NewChain(s1)
+		c2, gen2, err := onl.NewChain(s1, 0)
 		test.Ok(t, err)
 
 		g2 := c2.Genesis()
@@ -58,7 +58,7 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	s1, clean := onl.TempBadgerStore()
 	defer clean()
 
-	c1, g1, err := onl.NewChain(s1, func(kv *onl.KV) {
+	c1, g1, err := onl.NewChain(s1, 0, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)             //mint 1 currency
 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK()) //then deposit it
 	})
@@ -119,7 +119,7 @@ func TestRoundWeigh(t *testing.T) {
 	idn1 := onl.NewIdentity([]byte{0x01})
 	idn2 := onl.NewIdentity([]byte{0x03})
 
-	chain, gen, err := onl.NewChain(store, func(kv *onl.KV) {
+	chain, gen, err := onl.NewChain(store, 0, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)
 		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
 		kv.CoinbaseTransfer(idn2.PK(), 1)
@@ -180,7 +180,7 @@ func tallRound(height, width uint64, t *testing.T) {
 	defer clean()
 
 	var idns []*onl.Identity
-	chain, gen, err := onl.NewChain(store, func(kv *onl.KV) {
+	chain, gen, err := onl.NewChain(store, 0, func(kv *onl.KV) {
 		for i := uint64(0); i < height; i++ {
 			idb := make([]byte, 8)
 			binary.BigEndian.PutUint64(idb, i)
@@ -218,7 +218,7 @@ func TestChainKVOperation(t *testing.T) {
 	idn := onl.NewIdentity([]byte{0x01})
 
 	//create a chain with genesis deposit and coinbase
-	chain, gen, err := onl.NewChain(store, func(kv *onl.KV) {
+	chain, gen, err := onl.NewChain(store, 0, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn.PK(), 1)
 		kv.DepositStake(idn.PK(), 1, idn.TokenPK())
 	})

@@ -29,37 +29,38 @@ func TestBlockHashing(t *testing.T) {
 
 	b1 := idn1.Mint(1, bid1, bid2, 1)
 	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "fffffffffffffffe9443880e", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe9443880e", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
+	test.Equals(t, "9443880e-1", b1.Hash().String())
 
 	//expect the hash to change on every field manipulation
 	b1.FinalizedPrev[0] = 0x01
-	test.Equals(t, "fffffffffffffffe71974c3e", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe71974c3e", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Prev[0] = 0x02
-	test.Equals(t, "fffffffffffffffe5afeebb2", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe5afeebb2", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.PK[0] = 0x01
-	test.Equals(t, "fffffffffffffffe4f83959b", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe4f83959b", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Proof[0] = 0x01
-	test.Equals(t, "fffffffffffffffe9257ac8b", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe9257ac8b", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Token[0] = 0x01
-	test.Equals(t, "fffffffffffffffe11ad84f8", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe11ad84f8", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Timestamp += 1
-	test.Equals(t, "fffffffffffffffe10aa6ee1", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "fffffffffffffffe10aa6ee1", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Round = 100
-	test.Equals(t, "ffffffffffffff9bf8c446ed", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "ffffffffffffff9bf8c446ed", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 	test.Equals(t, uint64(100), b1.Hash().Round())
 
 	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.AppendWrite(nil) //shouldn't do anything
-	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash()))
+	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 }
 
 func TestConsistentWritesHashing(t *testing.T) {

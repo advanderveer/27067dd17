@@ -149,7 +149,6 @@ func (e *Engine) Handle(msg *Msg) {
 }
 
 func (e *Engine) handleRound(round, ts uint64) {
-	e.logs.Printf("[INFO][%s] entered round %d", e.idn, round)
 
 	//read tip and current state from chain
 	tip, state, err := e.chain.State(onl.NilID)
@@ -165,10 +164,12 @@ func (e *Engine) handleRound(round, ts uint64) {
 	})
 
 	if stake < 1 {
+		e.logs.Printf("[INFO][%s][%d] we have no stake put up, proposing no block this round", e.idn, round)
 		return //no stake, no proposing for us in this round
 	}
 
 	//mint a block for our current tip
+	e.logs.Printf("[INFO][%s][%d] we have %d stake to propose blocks, minting on tip %s", e.idn, round, stake, tip)
 	b := e.idn.Mint(ts, tip, e.genesis, round)
 
 	//try to apply random writes from the mempool, if they work include until max is reached
@@ -252,7 +253,9 @@ func (e *Engine) handleBlock(b *onl.Block) {
 	//@TODO remove all conflicting writes from mempool if the block is finalized
 
 	//handle any messages that were waiting on this block
-	e.ooo.Resolve(b.Hash())
+	id := b.Hash()
+	e.ooo.Resolve(id)
+	e.logs.Printf("[INFO][%s][%d] appended block %s to our chain", e.idn, round, id)
 
 	//relay to peers
 	err := e.bc.Write(&Msg{Block: b})

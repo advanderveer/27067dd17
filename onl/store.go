@@ -36,6 +36,7 @@ type Tx interface {
 	Read(id ID) (b *Block, stk *Stakes, rank *big.Int, err error)
 	Round(nr uint64, f func(id ID, b *Block, stk *Stakes, rank *big.Int) error) (err error)
 	MaxRound() (nr uint64)
+	MinRound() (nr uint64)
 
 	Commit() (err error)
 	Discard()
@@ -81,6 +82,28 @@ func (tx *BadgerTx) WriteTip(tip ID, tipw uint64) (err error) {
 	err = tx.btx.Set(tipKey(), val)
 	if err != nil {
 		return fmt.Errorf("failed to set tip key: %v", err)
+	}
+
+	return
+}
+
+//MinRound returns the minimum round stored in the chain
+func (tx *BadgerTx) MinRound() (nr uint64) {
+	opt := badger.DefaultIteratorOptions
+	opt.PrefetchValues = false
+	opt.Reverse = true
+
+	iter := tx.btx.NewIterator(opt)
+	defer iter.Close()
+
+	prefix := []byte(blockBucket)
+
+	seek := []byte(blockBucket)
+	seek[len(seek)-1] = 0xff //the trick to get reverse prefix seek to work
+
+	for iter.Seek(seek); iter.ValidForPrefix(prefix); iter.Next() {
+		id := key2id(iter.Item().Key())
+		return id.Round()
 	}
 
 	return

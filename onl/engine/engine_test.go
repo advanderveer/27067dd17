@@ -33,7 +33,7 @@ func drawPNG(t *testing.T, e *engine.Engine, name string) {
 func testEngine(t *testing.T, osc *clock.MemOscillator, idn *onl.Identity, genf ...func(kv *onl.KV)) (bc *broadcast.Mem, e *engine.Engine, clean func()) {
 	store, cleanstore := onl.TempBadgerStore()
 
-	chain, _, err := onl.NewChain(store, genf...)
+	chain, _, err := onl.NewChain(store, 0, genf...)
 	test.Ok(t, err)
 
 	bc = broadcast.NewMem(100)

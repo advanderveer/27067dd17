@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 
@@ -22,6 +23,10 @@ var NilID = ID{}
 
 //ID of a block is determined by hashing it
 type ID [IDLen]byte
+
+func (id ID) String() string {
+	return fmt.Sprintf("%.4x-%d", id[8:], id.Round())
+}
 
 //Bytes returns the underlying bytes as a slice
 func (id ID) Bytes() []byte { return id[:] }
