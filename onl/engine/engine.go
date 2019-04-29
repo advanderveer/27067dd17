@@ -10,6 +10,13 @@ import (
 	"github.com/advanderveer/27067dd17/onl"
 )
 
+//Clock provides an interface for synchronized rounds and reasonably accurate timestamps
+type Clock interface {
+	Round() (round uint64)
+	Next() (round, ts uint64, err error)
+	Close() (err error)
+}
+
 // Engine reads messages from the broadcast and advances through rounds
 type Engine struct {
 	bc      Broadcast

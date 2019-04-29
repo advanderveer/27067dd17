@@ -20,9 +20,8 @@ func (p *MemClock) Round() uint64 {
 	return atomic.LoadUint64(&p.round)
 }
 
-// ReadUs will read the current microsecond timestamp
-func (p *MemClock) ReadUs() (ts uint64, err error) {
-	ts = uint64(time.Now().UnixNano() / (10 ^ 6))
+func (p *MemClock) readMs() (ts uint64, err error) {
+	ts = uint64(time.Now().UnixNano() / (1e6))
 	return
 }
 
@@ -34,7 +33,7 @@ func (p *MemClock) Next() (round, ts uint64, err error) {
 	}
 
 	atomic.StoreUint64(&p.round, rmsg)
-	ts, err = p.ReadUs()
+	ts, err = p.readMs()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -55,7 +54,7 @@ func (p *MemClock) Close() (err error) {
 	return
 }
 
-//MemOscillator is an in-memory oscillator that simulates an synchronized pulse
+//MemOscillator is an in-memory oscillator that hands out perfectly synchronized rounds
 type MemOscillator struct {
 	round  uint64
 	pulses map[*MemClock]struct{}
