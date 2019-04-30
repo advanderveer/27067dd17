@@ -121,7 +121,7 @@ func TestRoundWeigh(t *testing.T) {
 	defer clean()
 
 	idn1 := onl.NewIdentity([]byte{0x01})
-	idn2 := onl.NewIdentity([]byte{0x05})
+	idn2 := onl.NewIdentity([]byte{0x04})
 
 	chain, gen, err := onl.NewChain(store, 0, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)
@@ -233,6 +233,8 @@ func TestChainKVOperation(t *testing.T) {
 	w := chain.Update(func(kv *onl.KV) {
 		kv.Set([]byte{0x01}, []byte{0x02})
 	})
+
+	test.Ok(t, w.GenerateNonce())
 
 	//mint a block ourselves, add the write
 	b := idn.Mint(1, gen, gen, 1)

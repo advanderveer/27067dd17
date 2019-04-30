@@ -2,6 +2,7 @@ package onl
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/advanderveer/27067dd17/onl/ssi"
 )
@@ -11,11 +12,17 @@ import (
 // total order.
 type State struct {
 	db *ssi.DB
+
+	writes map[Nonce]struct{}
+	mu     sync.RWMutex
 }
 
 // NewState initialized a state, reconstructing from any existing state from the log
 func NewState(log [][]*Write) (s *State, err error) {
-	s = &State{db: ssi.NewDB()}
+	s = &State{
+		db:     ssi.NewDB(),
+		writes: make(map[Nonce]struct{}),
+	}
 
 	for _, ws := range log {
 		for _, w := range ws {
@@ -34,10 +41,17 @@ func NewState(log [][]*Write) (s *State, err error) {
 //the data would be added but isn't actually. This method is also called in the
 //process of replicating block writes. If apply returns an error it will not be
 //accepted by peers.
-//@TODO remove the dry-run option if we no longer use it anywere
 func (s *State) Apply(w *Write, dry bool) (err error) {
 	if w == nil {
 		return //nil writes can happen if update calls result in zero writes
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	//check if the write was already applied in this state
+	if _, ok := s.writes[w.Nonce]; ok {
+		return ErrAlreadyApplied
 	}
 
 	//@TODO validate how keys are written, authentication and authorization
@@ -48,6 +62,7 @@ func (s *State) Apply(w *Write, dry bool) (err error) {
 	//@TODO validate max key and value lengths
 	//@TODO check signature
 
+	//commit to ssi db, or return conflict
 	err = s.db.Commit(w.TxData, dry)
 	if err == ssi.ErrConflict {
 		return ErrApplyConflict
@@ -55,6 +70,11 @@ func (s *State) Apply(w *Write, dry bool) (err error) {
 
 	if err != nil {
 		return fmt.Errorf("failed to commit: %v", err)
+	}
+
+	//mark this write as part of the state
+	if !dry {
+		s.writes[w.Nonce] = struct{}{}
 	}
 
 	return
@@ -74,8 +94,6 @@ func (s *State) Update(f func(kv *KV)) (w *Write) {
 	if len(w.TxData.WriteRows) < 1 {
 		return nil //no write rows means an empty op, make it nil
 	}
-
-	//@TODO sign write for a given identity
 
 	return
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"sync"
 
 	"github.com/advanderveer/27067dd17/onl"
 )
@@ -28,9 +27,7 @@ type Engine struct {
 	ooo     *OutOfOrder
 	maxw    int
 	genesis onl.ID
-
-	mempool   map[onl.WID]*onl.Write
-	mempoolmu sync.RWMutex
+	pool    *MemPool
 }
 
 // New initiates an engine
@@ -44,9 +41,7 @@ func New(logw io.Writer, bc Broadcast, clock Clock, idn *onl.Identity, c *onl.Ch
 		chain: c,
 		maxw:  10, //@TODO make configurable, or measure total block size in MiB
 
-		//for inspiration about mempool handling in bitcoin:
-		//https://blog.kaiko.com/an-in-depth-guide-into-how-the-mempool-works-c758b781c608
-		mempool: make(map[onl.WID]*onl.Write),
+		pool: NewMemPool(),
 	}
 
 	//genesis is kept for resolving purposes
@@ -55,9 +50,6 @@ func New(logw io.Writer, bc Broadcast, clock Clock, idn *onl.Identity, c *onl.Ch
 	//setup out of order buffer, genesis is always marked as resolved
 	e.ooo = NewOutOfOrder(e)
 	e.ooo.Resolve(e.genesis)
-
-	//@TODO make it possible for a member to catch up to the correct round of the network
-	//@TODO start a process that allows out of sync members to catch up with missing blocks
 
 	//round progress
 	go func() {
@@ -70,8 +62,6 @@ func New(logw io.Writer, bc Broadcast, clock Clock, idn *onl.Identity, c *onl.Ch
 
 			//handle round
 			e.handleRound(round, ts)
-
-			//@TODO enable random syncing of old blocks
 		}
 
 		e.done <- struct{}{}
@@ -108,7 +98,6 @@ func (e *Engine) Tip() onl.ID {
 
 // View will read the chain's state
 func (e *Engine) View(f func(kv *onl.KV)) (err error) {
-	//@TODO take some handle to wait for a certain version to come in
 	e.chain.View(f)
 	return
 }
@@ -133,10 +122,6 @@ func (e *Engine) Update(ctx context.Context, f func(kv *onl.KV)) (err error) {
 
 	//handle our own write
 	e.handleWrite(w)
-
-	//@TODO wait for write to be accepted or context to expire
-	//@TODO return some hash/handle that a call to read/watch can wait on
-	//@TODO allow configurable certainty on network consensus per handle
 
 	return
 }
@@ -182,31 +167,15 @@ func (e *Engine) handleRound(round, ts uint64) {
 	e.logs.Printf("[INFO][%s][%d] we have %d stake to propose blocks, minting on tip %s", e.idn, round, stake, tip)
 	b := e.idn.Mint(ts, tip, e.genesis, round)
 
-	// [MAJOR] Reduce/Trim the mempool writes before selecting new writes
-	// - all writes that are in our current heaviest tip are moved to the bottom
-	// - all writes that conflict with our current tip are reduced
-	// - all writes that were already at the bottom get reduced prio by another count
-	// - all writes below a certain prio are removed from the pool
-
-	// - Can we make reads and writes similar to UTXO in that reads always consume
-	//   a key (making it nil), and writes always write a new key
-
-	//try to apply random writes from the mempool, if they work include until max is reached
-	e.mempoolmu.RLock()
-	for _, w := range e.mempool {
-		err = state.Apply(w, false)
-		if err != nil {
-			continue
-		}
-
+	//pick writes that are suited for the new block
+	e.pool.Pick(state, func(w *onl.Write) bool {
 		b.AppendWrite(w)
 		if len(b.Writes) >= e.maxw {
-			break
+			return true
 		}
-	}
-	e.mempoolmu.RUnlock()
 
-	//@TODO are empty blocks allowed? what is the incentive of adding writes?
+		return false
+	})
 
 	//sign the block
 	e.idn.Sign(b)
@@ -217,29 +186,18 @@ func (e *Engine) handleRound(round, ts uint64) {
 
 func (e *Engine) handleWrite(w *onl.Write) {
 
-	//check if the write hasn't been tampered with
-	if !w.VerifySignature() {
+	//@TODO check if the write (identified with the nonce) is already in the
+	//finalized chain. If so, reject.
+
+	//attempt to add to the mempool
+	err := e.pool.Add(w)
+	if err != nil {
+		e.logs.Printf("[INFO][%s] failed to add write to mempool: %v", e.idn, err)
 		return
 	}
-
-	e.mempoolmu.Lock()
-	defer e.mempoolmu.Unlock()
-
-	//@TODO identify the write by its nonce, reject if it already in the mempool
-	//check if we already have the write in our mempool
-	wid := w.Hash()
-	_, ok := e.mempool[wid]
-	if ok {
-		return
-	}
-
-	//@TODO check if the write (identified with the nonce) is already our tip's chain, if so reject
-
-	//add to mempool
-	e.mempool[wid] = w
 
 	//relay to peers
-	err := e.bc.Write(&Msg{Write: w})
+	err = e.bc.Write(&Msg{Write: w})
 	if err != nil {
 		e.logs.Printf("[ERRO][%s] failed to relay write to peers: %v", e.idn, err)
 	}
@@ -271,6 +229,9 @@ func (e *Engine) handleBlock(b *onl.Block) {
 
 		break //append went through
 	}
+
+	//@TODO if this blocks causes new finalizations it should remove writes from
+	//the mempool and trim unused blocks.
 
 	//handle any messages that were waiting on this block
 	id := b.Hash()

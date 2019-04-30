@@ -21,6 +21,8 @@ func TestBasicStateHandling(t *testing.T) {
 	s2, err := onl.NewState([][]*onl.Write{{w1}})
 	test.Ok(t, err)
 
+	test.Equals(t, onl.ErrAlreadyApplied, s2.Apply(w1, false))
+
 	s2.View(func(kv *onl.KV) {
 		test.Equals(t, []byte{0x02}, kv.Get([]byte{0x01}))
 	})
@@ -30,6 +32,7 @@ func TestBasicStateHandling(t *testing.T) {
 		kv.Set([]byte{0x02}, kv.Get([]byte{0x01}))
 	})
 
+	test.Ok(t, w2.GenerateNonce())
 	_, err = onl.NewState([][]*onl.Write{{w1, w2}})
 	test.Equals(t, onl.ErrApplyConflict, err) //yep, conflicts
 

@@ -120,7 +120,3 @@ func skey(owner PK) []byte {
 func tpkey(owner PK) []byte {
 	return append(owner[:], []byte(tpkKey)...)
 }
-
-// func vrfkey(owner PK) []byte {
-//
-// }

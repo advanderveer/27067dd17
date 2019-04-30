@@ -110,9 +110,12 @@ func TestMultipleStateKVFuzzing(t *testing.T) {
 
 		//with start balance
 		for _, idn := range idns {
-			test.Ok(t, states[i].Apply(states[i].Update(func(kv *onl.KV) {
+			w := states[i].Update(func(kv *onl.KV) {
 				kv.CoinbaseTransfer(idn.PK(), startBalance)
-			}), false))
+			})
+
+			test.Ok(t, w.GenerateNonce())
+			test.Ok(t, states[i].Apply(w, false))
 		}
 	}
 
@@ -147,12 +150,16 @@ func TestMultipleStateKVFuzzing(t *testing.T) {
 	//applying them on all state shoudn't invalidate the system
 	var i int
 	for w := range writes {
+
+		if w != nil {
+			test.Ok(t, w.GenerateNonce())
+		}
+
 		for _, state := range states {
 			err := state.Apply(w, false)
 			if err != nil && err != onl.ErrApplyConflict {
 				t.Fatalf("unexpected apply error: %v", err)
 			}
-
 		}
 
 		i++

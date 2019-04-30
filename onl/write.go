@@ -14,6 +14,9 @@ import (
 //WID uniquely identifies a write
 type WID [sha256.Size]byte
 
+//Nonce is a number only used once
+type Nonce [32]byte
+
 //Bytes returns the slice version
 func (wid WID) Bytes() []byte { return wid[:] }
 
@@ -28,7 +31,7 @@ type Write struct {
 	//Nonce is a random large number that should be generated randomly and may only
 	//appear once in the longest chain. If a nonce is while another write already has
 	//it (either in the current mempool or in the chain) the write will not be accepted.
-	Nonce [32]byte
+	Nonce Nonce
 
 	//Signature of the block, signed by the identity of PK such that it can be verified
 	//that the block has not been tampered with

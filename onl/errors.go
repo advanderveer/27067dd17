@@ -17,4 +17,5 @@ var (
 	ErrTimestampNotAfterPrev = errors.New("timestamp didn't come after prev's timestamp")
 	ErrNotWeighted           = errors.New("block's round is not weighted yet")
 	ErrAppendConflict        = errors.New("concurrent append caused conflict")
+	ErrAlreadyApplied        = errors.New("write was already applied to this state")
 )
