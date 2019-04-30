@@ -1,7 +1,6 @@
 package clock_test
 
 import (
-	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -20,7 +19,6 @@ func TestBasicWallClock(t *testing.T) {
 	test.Assert(t, c1.Round() > 10000, "should set initial absolute round")
 
 	nr1, ts1, err := c1.Next()
-	fmt.Println(ts1)
 	test.Assert(t, ts1 > 1556525961000, "should get timestamp in truncated milliseconds since epoch")
 	test.Ok(t, err)
 

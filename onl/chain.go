@@ -216,10 +216,10 @@ func (c *Chain) Append(b *Block) (err error) {
 		return ErrBlockExist
 	}
 
-	// prev blocks
+	// prev/stable blocks
 	var (
-		fprev *Block
-		prev  *Block
+		stable *Block
+		prev   *Block
 	)
 
 	// walk prev chain while storing all blocks up to the genesis a log
@@ -228,26 +228,22 @@ func (c *Chain) Append(b *Block) (err error) {
 			prev = bb
 		}
 
-		// if we see a newer finalized block in the chain then the fprev of this
-		// block we do not accept it.
-		if fprev == nil && stk.HasMajority() {
-			//@TODO test to figure out what this does to the forking rate
-			//@TODO can we instead find a more stable finalized prev in the further back?
+		for _, w := range bb.Writes {
+			if w.HasDepositFor(b.PK) {
+				stable = bb
+			}
 		}
 
-		if b.FinalizedPrev == id {
-			fprev = bb
-		}
+		//@TODO if both pref and deposit have been found, stop walk early
 
-		//@TODO if both pref and fprev have been found, stop walk early
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to walk prev chain: %v", err)
 	}
 
-	// fprev must exist in the prev chain
-	if fprev == nil {
-		return ErrFinalizedPrevNotInChain
+	// stable randomness block must exist
+	if stable == nil {
+		return ErrStableNotInChain
 	}
 
 	// prev timestamp must be before blocks timestamp, due to the chaining logic
@@ -286,7 +282,6 @@ func (c *Chain) Append(b *Block) (err error) {
 	var tpk []byte
 	state.View(func(kv *KV) {
 		stake, tpk = kv.ReadStake(b.PK)
-		// @TODO read roundtime
 		// @TODO read the vrf threshold (if any)
 	})
 
@@ -298,7 +293,7 @@ func (c *Chain) Append(b *Block) (err error) {
 	//validate the token
 	//@TODO it takes a lot of effort to get to this validation point, can members
 	//mis-use this to ddos the network?
-	if !b.VerifyToken(tpk) {
+	if !b.VerifyToken(tpk, stable.Hash()) {
 		return ErrInvalidToken
 	}
 

@@ -16,7 +16,7 @@ func TestKVOperations(t *testing.T) {
 	idn3 := onl.NewIdentity([]byte{0x03})
 
 	st1, _ := onl.NewState(nil)
-	test.Ok(t, st1.Apply(st1.Update(func(kv *onl.KV) {
+	w := st1.Update(func(kv *onl.KV) {
 
 		//try to read non-existing account
 		test.Equals(t, uint64(0), kv.AccountBalance(idn1.PK()))
@@ -70,8 +70,15 @@ func TestKVOperations(t *testing.T) {
 		//tranfer to itself shouldn't do anthing
 		kv.TransferCurrency(idn2.PK(), idn2.PK(), 150)
 		test.Equals(t, uint64(50), kv.AccountBalance(idn2.PK()))
+	})
 
-	}), false))
+	test.Ok(t, st1.Apply(w, false))
+
+	t.Run("check evaluation if write is stake deposit", func(t *testing.T) {
+		test.Equals(t, true, w.HasDepositFor(idn1.PK()))
+		test.Equals(t, false, w.HasDepositFor(idn2.PK()))
+		test.Equals(t, false, w.HasDepositFor(idn3.PK()))
+	})
 }
 
 // Imagine random concurrent operations being performed on any of a set of states.

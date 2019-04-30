@@ -37,7 +37,7 @@ func (kv *KV) DepositStake(owner PK, amount uint64, tpk []byte) {
 	kv.Set(balk, balv)
 
 	//read current stake and add amount
-	stakek := append(owner[:], []byte(stakeKey)...)
+	stakek := skey(owner)
 	stakev := kv.Get(stakek)
 	if len(stakev) >= 8 {
 
@@ -49,18 +49,18 @@ func (kv *KV) DepositStake(owner PK, amount uint64, tpk []byte) {
 
 	binary.BigEndian.PutUint64(stakev, amount)
 	kv.Set(stakek, stakev)
-	kv.Set(append(owner[:], []byte(tpkKey)...), tpk)
+	kv.Set(tpkey(owner), tpk)
 }
 
 // ReadStake returns the depositted stake and the token key that was committed to
 func (kv *KV) ReadStake(owner PK) (amount uint64, tpk []byte) {
-	k := append(owner[:], []byte(stakeKey)...)
+	k := skey(owner)
 	v := kv.Get(k)
 	if len(v) < 8 {
 		return 0, nil
 	}
 
-	return binary.BigEndian.Uint64(v), kv.Get(append(owner[:], []byte(tpkKey)...))
+	return binary.BigEndian.Uint64(v), kv.Get(tpkey(owner))
 }
 
 // CoinbaseTransfer is currency that is minted out of nothing and transferred to a receiver
@@ -113,3 +113,14 @@ func (kv *KV) AccountBalance(pk PK) (b uint64) {
 
 	return binary.BigEndian.Uint64(v)
 }
+
+func skey(owner PK) []byte {
+	return append(owner[:], []byte(stakeKey)...)
+}
+func tpkey(owner PK) []byte {
+	return append(owner[:], []byte(tpkKey)...)
+}
+
+// func vrfkey(owner PK) []byte {
+//
+// }

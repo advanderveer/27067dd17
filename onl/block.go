@@ -71,11 +71,6 @@ type Block struct {
 	// be finalized and transactions in it will not be reverted.
 	Prev ID
 
-	// A stable prev function where the majority stake has invested in. It used to
-	// make the token unpredictable such that it cannot be precalculated to mine
-	// very valuable VRF keys.
-	FinalizedPrev ID
-
 	//Signature of the block, signed by the identity of PK such that it can be
 	//used to that the block's data hasn't been tampered with.
 	Signature [ed25519.SignatureSize]byte
@@ -102,7 +97,6 @@ func (b *Block) Hash() (id ID) {
 
 	//hash the fields and the ops
 	id = ID(sha256.Sum256(bytes.Join([][]byte{
-		b.FinalizedPrev.Bytes(),
 		b.Prev.Bytes(),
 		b.PK[:],
 		b.Proof,
@@ -120,8 +114,8 @@ func (b *Block) Hash() (id ID) {
 
 //Seed returns the input for the verifiable random token. The token (and the thus
 //the blocks ranking) is dependant on this seed.
-func (b *Block) Seed() []byte {
-	seed := b.FinalizedPrev[:]      //brings long-term uncertainty about a pk's worth
+func (b *Block) Seed(stable ID) []byte {
+	seed := stable[:]               //is stable and unknown when the identity commits to a pk
 	seed = append(seed, b.PK[:]...) //the pk of the proposer
 
 	roundb := make([]byte, 8) //round nr as the epoc dividd by the round time
@@ -137,8 +131,8 @@ func (b *Block) VerifySignature() (ok bool) {
 }
 
 //VerifyToken will verify the random function token
-func (b *Block) VerifyToken(tokenPK []byte) (ok bool) {
-	return vrf.Verify(tokenPK, b.Seed(), b.Token, b.Proof)
+func (b *Block) VerifyToken(tokenPK []byte, stable ID) (ok bool) {
+	return vrf.Verify(tokenPK, b.Seed(stable), b.Token, b.Proof)
 }
 
 //Rank returns the block ranking as a function of the identities stake

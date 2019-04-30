@@ -79,13 +79,13 @@ func (idn *Identity) Sign(b *Block) {
 //Mint a new block for the provided (finalized) tip and round. Other will only
 //accept it if prior to this block some stake has been put up by the proposing
 //identity
-func (idn *Identity) Mint(ts uint64, prev, fPrev ID, round uint64) (b *Block) {
+func (idn *Identity) Mint(ts uint64, prev, stable ID, round uint64) (b *Block) {
 	idn.mu.RLock()
 	defer idn.mu.RUnlock()
 
-	b = &Block{Round: round, Timestamp: ts, Prev: prev, FinalizedPrev: fPrev}
+	b = &Block{Round: round, Timestamp: ts, Prev: prev}
 	copy(b.PK[:], (*idn.signPK)[:])
 
-	b.Token, b.Proof = vrf.Prove(b.Seed(), idn.vrfSK)
+	b.Token, b.Proof = vrf.Prove(b.Seed(stable), idn.vrfSK)
 	return
 }

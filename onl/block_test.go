@@ -29,38 +29,34 @@ func TestBlockHashing(t *testing.T) {
 
 	b1 := idn1.Mint(1, bid1, bid2, 1)
 	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "fffffffffffffffe9443880e", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "fffffffffffffffe7495cbd7", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 	test.Equals(t, uint64(1), b1.Hash().Round())
-	test.Equals(t, "9443880e-1", b1.Hash().String())
-
-	//expect the hash to change on every field manipulation
-	b1.FinalizedPrev[0] = 0x01
-	test.Equals(t, "fffffffffffffffe71974c3e", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "7495cbd7-1", b1.Hash().String())
 
 	b1.Prev[0] = 0x02
-	test.Equals(t, "fffffffffffffffe5afeebb2", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "fffffffffffffffeda167366", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.PK[0] = 0x01
-	test.Equals(t, "fffffffffffffffe4f83959b", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "fffffffffffffffe8389fb6a", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Proof[0] = 0x01
-	test.Equals(t, "fffffffffffffffe9257ac8b", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "fffffffffffffffe041ca2f0", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Token[0] = 0x01
-	test.Equals(t, "fffffffffffffffe11ad84f8", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "fffffffffffffffe2d71a1a4", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Timestamp += 1
-	test.Equals(t, "fffffffffffffffe10aa6ee1", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "fffffffffffffffefa04479f", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.Round = 100
-	test.Equals(t, "ffffffffffffff9bf8c446ed", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "ffffffffffffff9b74abdb41", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 	test.Equals(t, uint64(100), b1.Hash().Round())
 
 	b1.AppendWrite(&onl.Write{TxData: &ssi.TxData{}})
-	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "ffffffffffffff9b2931b958", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 
 	b1.AppendWrite(nil) //shouldn't do anything
-	test.Equals(t, "ffffffffffffff9b0656fdc7", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
+	test.Equals(t, "ffffffffffffff9b2931b958", fmt.Sprintf("%.12x", b1.Hash().Bytes()))
 }
 
 func TestConsistentWritesHashing(t *testing.T) {
@@ -85,15 +81,15 @@ func TestBlockMintingSigningVerification(t *testing.T) {
 	test.Equals(t, false, b1.VerifySignature())
 
 	idn1.Sign(b1)
-	test.Equals(t, "7d77be7b", fmt.Sprintf("%.4x", b1.Signature))
+	test.Equals(t, "b21d2e12", fmt.Sprintf("%.4x", b1.Signature))
 	test.Equals(t, true, b1.VerifySignature())
 
 	//crypto should verify
-	test.Equals(t, true, b1.VerifyToken(idn1.TokenPK()))
+	test.Equals(t, true, b1.VerifyToken(idn1.TokenPK(), bid2))
 
 	//different round should invalidate the vrf
 	b1.Round = 2
-	test.Equals(t, false, b1.VerifyToken(idn1.TokenPK()))
+	test.Equals(t, false, b1.VerifyToken(idn1.TokenPK(), bid2))
 
 	//changing a field should invalidate the block signature
 	b1.Timestamp += 1

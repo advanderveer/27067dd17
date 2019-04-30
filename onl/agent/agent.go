@@ -19,29 +19,27 @@ type Agent struct {
 	clock     *clock.WallClock
 	store     onl.Store
 	clean     func()
+	chain     *onl.Chain
 	engine    *engine.Engine
 }
 
 //New allocates the agent
 func New(cfg *Conf) (a *Agent, err error) {
 	a = &Agent{}
-
 	a.broadcast, err = broadcast.NewTCP(cfg.LogWriter, cfg.Bind, cfg.MaxIncomingConn, cfg.MaxMessageBuf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup tcp broadcast: %v", err)
 	}
 
 	a.clock = clock.NewWallClock(cfg.RoundTime)
-
 	a.store, a.clean = onl.TempBadgerStore()
 
-	chain, _, err := onl.NewChain(a.store, a.clock.Round(), cfg.genf)
+	a.chain, _, err = onl.NewChain(a.store, a.clock.Round(), cfg.genf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initalize chain: %v", err)
 	}
 
-	a.engine = engine.New(cfg.LogWriter, a.broadcast, a.clock, cfg.Identity, chain)
-
+	a.engine = engine.New(cfg.LogWriter, a.broadcast, a.clock, cfg.Identity, a.chain)
 	return
 }
 

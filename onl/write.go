@@ -20,8 +20,31 @@ type Write struct {
 	//@TODO add signer pk to hash
 }
 
-func (op *Write) StartTS() uint64 {
-	return op.TxData.TimeStart
+// HasDepositFor returns whether this write writes a deposit for the provided
+// identity. This is used to find a random seed for the VRF
+func (op *Write) HasDepositFor(pk PK) bool {
+	var (
+		wroteTPK   bool
+		wroteStake bool
+	)
+
+	for _, wr := range op.TxData.WriteRows {
+		if bytes.Equal(wr.K, tpkey(pk)) {
+			wroteTPK = true
+			continue
+		}
+
+		if bytes.Equal(wr.K, skey(pk)) {
+			wroteStake = true
+			continue
+		}
+	}
+
+	if wroteTPK && wroteStake {
+		return true
+	}
+
+	return false
 }
 
 //Hash the operation

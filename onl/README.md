@@ -161,6 +161,8 @@ condition trasnsactions? https://github.com/perlin-network/life
   vrf pk the user gets assigned a (verifiable) random number for each token it generates itself.
 - _What if we close a round only when majority of stored stake has proposed?_ This can cause
   the minority segment of the network to halt, but maybe that is ok?
+- _Members can submit multiple blocks with the same token but  different writes?_ Yes and currently
+  this grows the storage unbounded, but has not monetary incentive
 
 ## Future Plans
 - Optional with WebRTC: https://github.com/pion/webrtc for NAT punching?
@@ -168,4 +170,30 @@ condition trasnsactions? https://github.com/perlin-network/life
 
 ## Resources
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193
-- Committing to something upfront: https://eprint.iacr.org/2016/918.pdf
+- Creatking VRF with weaker primitives: https://eprint.iacr.org/2016/918.pdf
+
+## Plan of Attack:
+
+- [x] The VRF seeds needs to a include a source of randomness that cannot be known
+  when an identity commits to its VRF key. We will say that this will always
+  be the Hash of the block that encodes the deposit stake
+  of a member. It is verifiably random and not known until the block that encodes
+  the VRF key of the joining is minted. The vrf token is now build of just
+  Round+Pre-Commit Seed, so member can only rank exactly one block per round.
+  _Rare Exception_ In case of a fork the deposit can be in two blocks, at that
+  point the identity may vote on both forks, this should be no problem as long as
+  there is a rule that prevents stake deposits to be used too quickly (needs to
+  settle in finalized block)
+- [ ] Mempool transactions are removed when ...(?)
+- [ ] If a stake holder has chosen a certain prev block to build on it indirectly
+  votes on its ancestors. If a block has received a majority of the stake in
+  this way, it can be finalized.  
+- [ ] Each token must surpass a threshold that is calculated by looking at the
+  average token difficulty of the last N blocks of the chain.
+- [ ] The algorithm can adjust or be configured to work in high-latency (WAN)
+   and low latency (LAN) scenarios by changing the round time.
+- [ ] Proposers are automatically removed if they fail to propose a block to the
+  network, adjusted for the VRF threshold
+- [ ] New agents can join the network halfway during the execution of the protocol
+- [ ] Rules prevent identities from writing to each other's keyspace, unless it
+  transfers stake.  

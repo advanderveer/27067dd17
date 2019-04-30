@@ -32,4 +32,5 @@ func TestBasicStateHandling(t *testing.T) {
 
 	_, err = onl.NewState([][]*onl.Write{{w1, w2}})
 	test.Equals(t, onl.ErrApplyConflict, err) //yep, conflicts
+
 }

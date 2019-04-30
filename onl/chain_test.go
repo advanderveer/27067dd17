@@ -64,6 +64,10 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	})
 	test.Ok(t, err)
 
+	gb, _, _ := c1.Read(g1)
+	var gbid onl.ID
+	copy(gbid[:], gb.Token)
+
 	b1 := idn1.Mint(1, g1, g1, 1)
 	idn1.Sign(b1)
 
@@ -117,7 +121,7 @@ func TestRoundWeigh(t *testing.T) {
 	defer clean()
 
 	idn1 := onl.NewIdentity([]byte{0x01})
-	idn2 := onl.NewIdentity([]byte{0x03})
+	idn2 := onl.NewIdentity([]byte{0x05})
 
 	chain, gen, err := onl.NewChain(store, 0, func(kv *onl.KV) {
 		kv.CoinbaseTransfer(idn1.PK(), 1)
