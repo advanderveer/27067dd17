@@ -108,7 +108,7 @@ func (e *Engine) Tip() onl.ID {
 
 // View will read the chain's state
 func (e *Engine) View(f func(kv *onl.KV)) (err error) {
-	//@TODO take some handle to watch for
+	//@TODO take some handle to wait for a certain version to come in
 	e.chain.View(f)
 	return
 }
@@ -120,6 +120,16 @@ func (e *Engine) Update(ctx context.Context, f func(kv *onl.KV)) (err error) {
 	if w == nil {
 		return nil //no changes, "succeeds" immediately
 	}
+
+	//generate a nonce for this write
+	err = w.GenerateNonce()
+	if err != nil {
+		return fmt.Errorf("failed to generate nonce: %v", err)
+	}
+
+	//sign the write
+	w.PK = e.idn.PK()
+	e.idn.SignWrite(w)
 
 	//handle our own write
 	e.handleWrite(w)
@@ -172,6 +182,15 @@ func (e *Engine) handleRound(round, ts uint64) {
 	e.logs.Printf("[INFO][%s][%d] we have %d stake to propose blocks, minting on tip %s", e.idn, round, stake, tip)
 	b := e.idn.Mint(ts, tip, e.genesis, round)
 
+	// [MAJOR] Reduce/Trim the mempool writes before selecting new writes
+	// - all writes that are in our current heaviest tip are moved to the bottom
+	// - all writes that conflict with our current tip are reduced
+	// - all writes that were already at the bottom get reduced prio by another count
+	// - all writes below a certain prio are removed from the pool
+
+	// - Can we make reads and writes similar to UTXO in that reads always consume
+	//   a key (making it nil), and writes always write a new key
+
 	//try to apply random writes from the mempool, if they work include until max is reached
 	e.mempoolmu.RLock()
 	for _, w := range e.mempool {
@@ -197,11 +216,16 @@ func (e *Engine) handleRound(round, ts uint64) {
 }
 
 func (e *Engine) handleWrite(w *onl.Write) {
-	//@TODO validate syntax/signature
+
+	//check if the write hasn't been tampered with
+	if !w.VerifySignature() {
+		return
+	}
 
 	e.mempoolmu.Lock()
 	defer e.mempoolmu.Unlock()
 
+	//@TODO identify the write by its nonce, reject if it already in the mempool
 	//check if we already have the write in our mempool
 	wid := w.Hash()
 	_, ok := e.mempool[wid]
@@ -209,7 +233,7 @@ func (e *Engine) handleWrite(w *onl.Write) {
 		return
 	}
 
-	//@TODO check if the write is already in our heaviest tip chain, if so reject
+	//@TODO check if the write (identified with the nonce) is already our tip's chain, if so reject
 
 	//add to mempool
 	e.mempool[wid] = w
@@ -247,10 +271,6 @@ func (e *Engine) handleBlock(b *onl.Block) {
 
 		break //append went through
 	}
-
-	//@TODO remove all writes from mempool if the block was finalized or if block
-	//became one round old and part of our heaviest chain
-	//@TODO remove all conflicting writes from mempool if the block is finalized
 
 	//handle any messages that were waiting on this block
 	id := b.Hash()

@@ -76,6 +76,11 @@ func (idn *Identity) Sign(b *Block) {
 	b.Signature = *(ed25519.Sign(idn.signSK, b.Hash().Bytes()))
 }
 
+//SignWrite signs the write
+func (idn *Identity) SignWrite(w *Write) {
+	w.Signature = *(ed25519.Sign(idn.signSK, w.Hash().Bytes()))
+}
+
 //Mint a new block for the provided (finalized) tip and round. Other will only
 //accept it if prior to this block some stake has been put up by the proposing
 //identity

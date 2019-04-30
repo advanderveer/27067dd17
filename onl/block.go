@@ -93,6 +93,7 @@ func (b *Block) Hash() (id ID) {
 	for _, wr := range b.Writes {
 		wrsh := wr.Hash()
 		wrshs = append(wrshs, wrsh[:])
+		wrshs = append(wrshs, wr.Signature[:])
 	}
 
 	//hash the fields and the ops
