@@ -64,7 +64,7 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	})
 	test.Ok(t, err)
 
-	gb, _, _ := c1.Read(g1)
+	gb, _, _, _ := c1.Read(g1)
 	var gbid onl.ID
 	copy(gbid[:], gb.Token)
 
@@ -111,7 +111,7 @@ func TestChainAppendingAndWalking(t *testing.T) {
 	})
 
 	t.Run("reading non-existing should fail", func(t *testing.T) {
-		_, _, err := c1.Read(bid4)
+		_, _, _, err := c1.Read(bid4)
 		test.Equals(t, onl.ErrBlockNotExist, err)
 	})
 }
@@ -131,7 +131,7 @@ func TestRoundWeigh(t *testing.T) {
 	})
 	test.Ok(t, err)
 
-	b0, w0, err := chain.Read(gen)
+	b0, w0, _, err := chain.Read(gen)
 	test.Ok(t, err)
 	test.Equals(t, uint64(1000), w0)
 	test.Equals(t, b0, chain.Genesis())
@@ -140,7 +140,7 @@ func TestRoundWeigh(t *testing.T) {
 	idn1.Sign(b1)
 	test.Ok(t, chain.Append(b1))
 
-	b11, w1, err := chain.Read(b1.Hash())
+	b11, w1, _, err := chain.Read(b1.Hash())
 	test.Ok(t, err)
 	test.Equals(t, uint64(2000), w1)
 	test.Equals(t, b1, b11)
@@ -154,12 +154,12 @@ func TestRoundWeigh(t *testing.T) {
 	test.Ok(t, chain.Weigh(0))
 
 	//block 2 should have over taken the blocks 1 ranking
-	b12, w2, err := chain.Read(b1.Hash())
+	b12, w2, _, err := chain.Read(b1.Hash())
 	test.Ok(t, err)
 	test.Equals(t, uint64(1500), w2)
 	test.Equals(t, b1, b12)
 
-	b22, w3, err := chain.Read(b2.Hash())
+	b22, w3, _, err := chain.Read(b2.Hash())
 	test.Ok(t, err)
 	test.Equals(t, uint64(2000), w3)
 	test.Equals(t, b2, b22)
@@ -168,7 +168,7 @@ func TestRoundWeigh(t *testing.T) {
 
 	t.Run("for each", func(t *testing.T) {
 		var saw []onl.ID
-		test.Ok(t, chain.ForEach(0, func(id onl.ID, b *onl.Block) error {
+		test.Ok(t, chain.ForEach(0, func(id onl.ID, b *onl.Block, stk *onl.Stakes) error {
 			saw = append(saw, id)
 			return nil
 		}))
@@ -262,4 +262,24 @@ func TestChainKVOperation(t *testing.T) {
 	}))
 
 	test.Equals(t, []uint64{3, 1}, deposits)
+
+	t.Run("finality measure", func(t *testing.T) {
+
+		_, _, f1, err := chain.Read(gen)
+		test.Ok(t, err)
+		test.Equals(t, 1.0, f1)
+
+		_, _, f2, err := chain.Read(b.Hash())
+		test.Ok(t, err)
+		test.Equals(t, 0.0, f2)
+
+		b2 := idn.Mint(2, b.Hash(), gen, 2)
+		idn.Sign(b2)
+
+		test.Ok(t, chain.Append(b2))
+
+		_, _, f3, err := chain.Read(b.Hash())
+		test.Ok(t, err)
+		test.Equals(t, 0.3333333333333333, f3)
+	})
 }

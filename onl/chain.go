@@ -81,7 +81,7 @@ func NewChain(s Store, genr uint64, genfs ...func(kv *KV)) (c *Chain, gen ID, er
 			c.genesis.Block.AppendWrite(w)
 		}
 
-		c.genesis.Stakes = &Stakes{Sum: deposits} //@TODO finalize block
+		c.genesis.Stakes = NewStakes(deposits) //@TODO finalize block
 
 		//write the genesis block
 		if err := tx.Write(c.genesis.Block, c.genesis.Stakes, big.NewInt(1)); err != nil {
@@ -323,7 +323,7 @@ func (c *Chain) Append(b *Block) (err error) {
 	}
 
 	//add the prev's total deposit to this block's deposit
-	stk := &Stakes{Sum: prevStk.Sum + deposit}
+	stk := NewStakes(prevStk.Sum + deposit)
 
 	// all is well, write the actual block with its rank
 	err = tx.Write(b, stk, rank)
@@ -344,11 +344,11 @@ func (c *Chain) Append(b *Block) (err error) {
 		return fmt.Errorf("failed to weigh rounds: %v", err)
 	}
 
-	// cast stake votes
-	// @TODO walk backwards to cast this block's signer's stake on all ancestors as
-	//    votes
-	// @TODO whenever the sum of unique stake casters surpasses the majority threshold
-	//    we can finalize it.
+	//vote the proposer's stake on this blocks ancestory, starting with the prev
+	err = c.vote(tx, b.Prev, b.PK, stake)
+	if err != nil {
+		return fmt.Errorf("failed to vote on ancestory: %v", err)
+	}
 
 	//finally, attempt to commit
 	err = tx.Commit()
@@ -372,32 +372,32 @@ func (c *Chain) Tip() (tip ID) {
 }
 
 //Read a block from the chain
-func (c *Chain) Read(id ID) (b *Block, weight uint64, err error) {
+func (c *Chain) Read(id ID) (b *Block, weight uint64, f float64, err error) {
 	tx := c.store.CreateTx(false)
 	defer tx.Discard()
-	b, _, _, err = tx.Read(id)
+	b, stk, _, err := tx.Read(id)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 
 	c.wmu.RLock()
 	defer c.wmu.RUnlock()
 	w, ok := c.weights[id]
 	if !ok {
-		return nil, 0, ErrNotWeighted
+		return nil, 0, 0, ErrNotWeighted
 	}
 
-	return b, w, nil
+	return b, w, stk.Finalization(), nil
 }
 
 //ForEach will call f for each block in all rounds >= to the start round
-func (c *Chain) ForEach(start uint64, f func(id ID, b *Block) (err error)) (err error) {
+func (c *Chain) ForEach(start uint64, f func(id ID, b *Block, stk *Stakes) (err error)) (err error) {
 	tx := c.store.CreateTx(true)
 	defer tx.Discard()
 	return c.forEach(tx, start, f)
 }
 
-func (c *Chain) forEach(tx Tx, start uint64, f func(id ID, b *Block) (err error)) (err error) {
+func (c *Chain) forEach(tx Tx, start uint64, f func(id ID, b *Block, stk *Stakes) (err error)) (err error) {
 	if start == 0 {
 		//when zero, the user either states it is acutally zero in which case the following operation
 		//does nothing or the users means it is the min round
@@ -406,10 +406,21 @@ func (c *Chain) forEach(tx Tx, start uint64, f func(id ID, b *Block) (err error)
 
 	for rn := start; rn <= tx.MaxRound(); rn++ {
 		if err = tx.Round(rn, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
-			return f(id, b)
+			return f(id, b, stk)
 		}); err != nil {
 			return fmt.Errorf("failed to read blocks from round %d: %v", rn, err)
 		}
+	}
+
+	return
+}
+
+func (c *Chain) vote(tx Tx, id ID, pk PK, stake uint64) (err error) {
+	if err = c.walk(tx, id, func(id ID, b *Block, stk *Stakes, rank *big.Int) error {
+		stk.Votes[pk] = stake
+		return tx.Write(b, stk, rank)
+	}); err != nil {
+		return fmt.Errorf("failed to walk: %v", err)
 	}
 
 	return

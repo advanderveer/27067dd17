@@ -13,19 +13,6 @@ import (
 	"github.com/dgraph-io/badger"
 )
 
-//Stakes describes the stake distribution as observed by a member
-type Stakes struct {
-
-	//Sum of all stake that is deposited in the ancestory of this block plus what
-	//is deposited in this block
-	Sum uint64
-
-	//@TODO add voted stake
-}
-
-//HasMajority returns whether the stakes represent a majority of stakes
-func (stk *Stakes) HasMajority() bool { return false }
-
 //Store stores blocks
 type Store interface {
 	CreateTx(writable bool) Tx
@@ -194,6 +181,10 @@ func decode(d []byte) (b *Block, stk *Stakes, rank *big.Int, err error) {
 	err = gob.NewDecoder(bytes.NewReader(d)).Decode(bb)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to decode block data: %v", err)
+	}
+
+	if bb.Stakes == nil {
+		bb.Stakes = NewStakes(0)
 	}
 
 	return bb.Block, bb.Stakes, bb.Rank, nil

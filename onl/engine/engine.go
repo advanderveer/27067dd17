@@ -257,13 +257,28 @@ func (e *Engine) Draw(w io.Writer) (err error) {
 
 	tip := e.chain.Tip()
 
-	if err = e.chain.ForEach(0, func(id onl.ID, b *onl.Block) error {
-		fmt.Fprintf(w, "\t"+`"%.6x" [shape=box,style="filled,solid",label="%.6x:%d:%d"`, id[8:], id[8:], b.Round, len(b.Writes))
+	if err = e.chain.ForEach(0, func(id onl.ID, b *onl.Block, stk *onl.Stakes) error {
+		f := stk.Finalization()
+
+		fmt.Fprintf(w, "\t"+`"%.6x" [shape=box,style="filled,solid",label="%.6x:%d:%d:%.1f"`, id[8:], id[8:], b.Round, len(b.Writes), f)
 
 		if id == tip {
-			fmt.Fprintf(w, `,fillcolor="#DDDDDD"`)
+			fmt.Fprintf(w, `,penwidth="3"`)
 		} else {
-			fmt.Fprintf(w, `,fillcolor="#ffffff"`)
+			fmt.Fprintf(w, `,penwidth="1"`)
+		}
+
+		switch {
+		case f >= 1.0: //unanimous
+			fmt.Fprintf(w, `,fillcolor="#BBBBBB"`)
+		case f >= 0.66667: //super majority
+			fmt.Fprintf(w, `,fillcolor="#CCCCCC"`)
+		case f >= 0.5: //majority
+			fmt.Fprintf(w, `,fillcolor="#DDDDDD"`)
+		case f > 0.0: //minority
+			fmt.Fprintf(w, `,fillcolor="#EEEEEE"`)
+		case f <= 0.0: //none
+			fmt.Fprintf(w, `,fillcolor="#FFFFFF"`)
 		}
 
 		fmt.Fprintf(w, "]\n")
