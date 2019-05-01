@@ -54,31 +54,38 @@ func (w *Write) RLock() { w.mu.RLock() }
 //RUnlock the write
 func (w *Write) RUnlock() { w.mu.RUnlock() }
 
-// HasDepositFor returns whether this write writes a deposit for the provided
-// identity. This is used to find a random seed for the VRF
-func (w *Write) HasDepositFor(pk PK) bool {
-	var (
-		wroteTPK   bool
-		wroteStake bool
-	)
+// TotalDeposit returns all the total amount of deposited stake in this write
+func (w *Write) TotalDeposit() (tot uint64) {
+	for _, deposit := range w.StakeDeposits() {
+		tot += deposit
+	}
 
+	return
+}
+
+//StakeDeposits returns a map of all stakes that have been deposited in this write
+func (w *Write) StakeDeposits() (deposits map[PK]uint64) {
+	deposits = make(map[PK]uint64)
 	for _, wr := range w.TxData.WriteRows {
-		if bytes.Equal(wr.K, tpkey(pk)) {
-			wroteTPK = true
-			continue
+		if len(wr.K) != 32+len(stakeKey) {
+			continue //not a stake key
 		}
 
-		if bytes.Equal(wr.K, skey(pk)) {
-			wroteStake = true
-			continue
+		if bytes.Equal(wr.K[32:], []byte(stakeKey)) {
+			var pk PK
+			copy(pk[:], wr.K[:32])
+			deposits[pk] = binary.BigEndian.Uint64(wr.V)
 		}
 	}
 
-	if wroteTPK && wroteStake {
-		return true
-	}
+	return
+}
 
-	return false
+// HasDepositFor returns whether this write writs a deposit of at least one for
+// the provided primary key
+func (w *Write) HasDepositFor(pk PK) bool {
+	deposit := w.StakeDeposits()[pk]
+	return deposit > 0
 }
 
 //Hash the operation

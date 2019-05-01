@@ -210,9 +210,11 @@ condition trasnsactions? https://github.com/perlin-network/life
 - [x] All tests pass with the race detector
 
 #Finalization V1
+- [x] Blocks in the chain keep track of the total deposit that has been stored such
+      that it can be asserted if a (super)majority has voted their stake on it
 - [ ] If a stake holder has chosen a certain prev block to build on it indirectly
   votes on its ancestors. If a block has received a majority of the stake in
-  this way, it can be finalized.  
+  this way, it can be marked as finalized.  
 
 #Trimming V1
 - [ ] The writes in finalized blocks can definitively removed from the mempool

@@ -31,22 +31,20 @@ func (kv *KV) DepositStake(owner PK, amount uint64, tpk []byte) {
 		return //nog enough balance, cannot do anything
 	}
 
+	//read current stake and add amount
+	stakek := skey(owner)
+	stakev := kv.Get(stakek)
+	if len(stakev) >= 8 {
+		return // if stake is already set, do nothing
+	}
+
 	//reduce balance
 	balance -= amount
 	binary.BigEndian.PutUint64(balv, balance)
 	kv.Set(balk, balv)
 
-	//read current stake and add amount
-	stakek := skey(owner)
-	stakev := kv.Get(stakek)
-	if len(stakev) >= 8 {
-
-		//stake amount is current stake + the amount
-		amount += binary.BigEndian.Uint64(stakev)
-	} else {
-		stakev = make([]byte, 8)
-	}
-
+	//set stake value
+	stakev = make([]byte, 8)
 	binary.BigEndian.PutUint64(stakev, amount)
 	kv.Set(stakek, stakev)
 	kv.Set(tpkey(owner), tpk)

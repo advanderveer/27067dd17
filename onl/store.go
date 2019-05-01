@@ -15,7 +15,12 @@ import (
 
 //Stakes describes the stake distribution as observed by a member
 type Stakes struct {
-	//@TODO add fields
+
+	//Sum of all stake that is deposited in the ancestory of this block plus what
+	//is deposited in this block
+	Sum uint64
+
+	//@TODO add voted stake
 }
 
 //HasMajority returns whether the stakes represent a majority of stakes

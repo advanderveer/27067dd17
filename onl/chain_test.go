@@ -220,10 +220,12 @@ func TestChainKVOperation(t *testing.T) {
 
 	//create an identity
 	idn := onl.NewIdentity([]byte{0x01})
+	idn2 := onl.NewIdentity([]byte{0x02})
 
 	//create a chain with genesis deposit and coinbase
 	chain, gen, err := onl.NewChain(store, 0, func(kv *onl.KV) {
-		kv.CoinbaseTransfer(idn.PK(), 1)
+		kv.CoinbaseTransfer(idn.PK(), 3)
+		kv.CoinbaseTransfer(idn2.PK(), 2)
 		kv.DepositStake(idn.PK(), 1, idn.TokenPK())
 	})
 
@@ -232,6 +234,7 @@ func TestChainKVOperation(t *testing.T) {
 	//create a write from the current genesis tip
 	w := chain.Update(func(kv *onl.KV) {
 		kv.Set([]byte{0x01}, []byte{0x02})
+		kv.DepositStake(idn2.PK(), 2, idn.TokenPK())
 	})
 
 	test.Ok(t, w.GenerateNonce())
@@ -250,4 +253,13 @@ func TestChainKVOperation(t *testing.T) {
 	chain.View(func(kv *onl.KV) {
 		test.Equals(t, []byte{0x02}, kv.Get([]byte{0x01}))
 	})
+
+	//check total deposit summing
+	var deposits []uint64
+	test.Ok(t, chain.Walk(chain.Tip(), func(id onl.ID, b *onl.Block, stk *onl.Stakes, rank *big.Int) error {
+		deposits = append(deposits, stk.Sum)
+		return nil
+	}))
+
+	test.Equals(t, []uint64{3, 1}, deposits)
 }

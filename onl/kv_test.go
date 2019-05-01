@@ -41,22 +41,24 @@ func TestKVOperations(t *testing.T) {
 		test.Equals(t, []byte(nil), tpk)
 
 		//deposit currency as stake
-		kv.DepositStake(idn1.PK(), 9, []byte{0x01})
-		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
+		kv.DepositStake(idn1.PK(), 9, idn1.TokenPK())
+
+		//second deposit should do nothing
+		kv.DepositStake(idn1.PK(), 1, []byte{0x01})
 
 		//read the deposit
 		stake, tpk = kv.ReadStake(idn1.PK())
-		test.Equals(t, uint64(10), stake)
+		test.Equals(t, uint64(9), stake)
 		test.Equals(t, idn1.TokenPK(), tpk)
 
 		//read the new account balance
-		test.Equals(t, uint64(90), kv.AccountBalance(idn1.PK()))
+		test.Equals(t, uint64(91), kv.AccountBalance(idn1.PK()))
 
 		//transfer to some other account
 		kv.TransferCurrency(idn1.PK(), idn2.PK(), 50)
 
 		//read balance of receiving account
-		test.Equals(t, uint64(40), kv.AccountBalance(idn1.PK()))
+		test.Equals(t, uint64(41), kv.AccountBalance(idn1.PK()))
 		test.Equals(t, uint64(50), kv.AccountBalance(idn2.PK()))
 
 		//tranfer while send doesn't have enough balance shouldn't change anything
@@ -78,6 +80,7 @@ func TestKVOperations(t *testing.T) {
 		test.Equals(t, true, w.HasDepositFor(idn1.PK()))
 		test.Equals(t, false, w.HasDepositFor(idn2.PK()))
 		test.Equals(t, false, w.HasDepositFor(idn3.PK()))
+		test.Equals(t, uint64(9), w.TotalDeposit())
 	})
 }
 

@@ -63,6 +63,8 @@ func NewChain(s Store, genr uint64, genfs ...func(kv *KV)) (c *Chain, gen ID, er
 	//if no genesis could be read, create from empty state
 	if c.genesis.Block == nil {
 		c.genesis.Block = &Block{
+			//@TODO the token should be a crypto random token as it determines the
+			//randomness of identities that deposit in this block
 			Token: []byte("vi veri veniversum vivus vici"),
 			Round: genr,
 		}
@@ -72,11 +74,14 @@ func NewChain(s Store, genr uint64, genfs ...func(kv *KV)) (c *Chain, gen ID, er
 			return nil, gen, fmt.Errorf("failed to setup empty state for genesis update: %v", err)
 		}
 
+		var deposits uint64
 		for _, genf := range genfs {
-			c.genesis.Block.AppendWrite(st.Update(genf))
+			w := st.Update(genf)
+			deposits += w.TotalDeposit()
+			c.genesis.Block.AppendWrite(w)
 		}
 
-		c.genesis.Stakes = &Stakes{} //@TODO finalize block
+		c.genesis.Stakes = &Stakes{Sum: deposits} //@TODO finalize block
 
 		//write the genesis block
 		if err := tx.Write(c.genesis.Block, c.genesis.Stakes, big.NewInt(1)); err != nil {
@@ -203,8 +208,6 @@ func (c *Chain) Append(b *Block) (err error) {
 		return ErrZeroRound
 	}
 
-	// @TODO are empty blocks allowed?
-
 	// open our store tx
 	tx := c.store.CreateTx(true)
 	defer tx.Discard()
@@ -218,17 +221,20 @@ func (c *Chain) Append(b *Block) (err error) {
 
 	// prev/stable blocks
 	var (
-		stable *Block
-		prev   *Block
+		stable  *Block
+		prev    *Block
+		prevStk *Stakes
 	)
 
 	// walk prev chain while storing all blocks up to the genesis a log
 	if err = c.walk(tx, b.Prev, func(id ID, bb *Block, stk *Stakes, rank *big.Int) error {
 		if b.Prev == id {
 			prev = bb
+			prevStk = stk
 		}
 
 		for _, w := range bb.Writes {
+			//@TODO make sure the prev block is before the deposit block
 			if w.HasDepositFor(b.PK) {
 				stable = bb
 			}
@@ -266,7 +272,6 @@ func (c *Chain) Append(b *Block) (err error) {
 	for r := prev.Round; r < b.Round; r++ {
 		//@TODO check if we know of any other block in a round in between the two rounds
 		//that could have been used as a prev?
-		//@TODO is this check still important if token randomness is based on fprev
 		//@TODO return early so proposers cannot ddos the acceptor
 	}
 
@@ -304,15 +309,24 @@ func (c *Chain) Append(b *Block) (err error) {
 	}
 
 	//validate each write in the block by applying them to the new state
+	var deposit uint64
 	for _, w := range b.Writes {
+
+		//apply the writes so we can check their validity
 		err = state.Apply(w, false)
 		if err != nil {
 			return err
 		}
+
+		//increment thet total amount of stake stored in this block
+		deposit += w.TotalDeposit()
 	}
 
+	//add the prev's total deposit to this block's deposit
+	stk := &Stakes{Sum: prevStk.Sum + deposit}
+
 	// all is well, write the actual block with its rank
-	err = tx.Write(b, nil, rank)
+	err = tx.Write(b, stk, rank)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %v", err)
 	}
@@ -330,12 +344,11 @@ func (c *Chain) Append(b *Block) (err error) {
 		return fmt.Errorf("failed to weigh rounds: %v", err)
 	}
 
-	// [MAJOR] distribute stake to all ancestors for finalization
-	// - figure out what the total stake deposit is for the network
-	// - check if this block provides the majority stake for the prev block
-	// - if so, finalize this block and all blocks before it
-	// - update our current state to this finalized chain
-	// - set the finalized state
+	// cast stake votes
+	// @TODO walk backwards to cast this block's signer's stake on all ancestors as
+	//    votes
+	// @TODO whenever the sum of unique stake casters surpasses the majority threshold
+	//    we can finalize it.
 
 	//finally, attempt to commit
 	err = tx.Commit()
