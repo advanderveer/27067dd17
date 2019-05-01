@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"sync"
+
 	"github.com/advanderveer/27067dd17/onl"
 )
 
@@ -18,8 +20,8 @@ func (h HandlerFunc) Handle(msg *Msg) { h(msg) }
 //OutOfOrder allows for calling a handler that handles messages depending on
 //another block to be called later
 type OutOfOrder struct {
-	handler Handler
-
+	handler  Handler
+	mu       sync.RWMutex
 	onBlocks map[onl.ID][]*Msg
 	onRounds map[uint64][]*Msg
 }
@@ -35,8 +37,11 @@ func NewOutOfOrder(h Handler) *OutOfOrder {
 
 //ResolveRound will resolve blocks that are waiting on the round to start
 func (o *OutOfOrder) ResolveRound(nr uint64) {
+	o.mu.Lock()
 	defers, ok := o.onRounds[nr]
 	o.onRounds[nr] = nil
+	o.mu.Unlock()
+
 	if ok {
 		for _, msg := range defers {
 			o.Handle(msg)
@@ -46,8 +51,11 @@ func (o *OutOfOrder) ResolveRound(nr uint64) {
 
 //Resolve will handle any messages that depended on this block
 func (o *OutOfOrder) Resolve(id onl.ID) {
+	o.mu.Lock()
 	defers, ok := o.onBlocks[id]
 	o.onBlocks[id] = nil
+	o.mu.Unlock()
+
 	if ok {
 		for _, msg := range defers {
 			o.Handle(msg)
@@ -65,6 +73,8 @@ func (o *OutOfOrder) Handle(msg *Msg) {
 
 	//aks for block and round deps
 	bdep, rdep := msg.Dependency()
+
+	o.mu.Lock()
 
 	//if there is a block dependency, check if it was resolved
 	//already or else add it to the block defer. In that case
@@ -95,8 +105,10 @@ func (o *OutOfOrder) Handle(msg *Msg) {
 		rdepResolved = true //no round dep, always resolved
 	}
 
+	o.mu.Unlock()
+
 	//if both are resolved we can finally call the handle
 	if rdepResolved && bdepResolved {
-		o.handler.Handle(msg)
+		go o.handler.Handle(msg)
 	}
 }

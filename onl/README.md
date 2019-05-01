@@ -204,8 +204,10 @@ condition trasnsactions? https://github.com/perlin-network/life
   will be stored and handle will be called when that round is reached. Creating
   blocks in a far future round has very little benefit through as its weight
   will be very low once the round is actually reached.  
-- [ ] Out-Of-Order is thread safe, multiple go-routines can call resolve and
+- [x] Out-Of-Order is thread safe, multiple go-routines can call resolve and
   handle.
+- [x] Handles are called in different go routines
+- [ ] Engine tests passes with race detector
 
 #Finalization V1
 - [ ] If a stake holder has chosen a certain prev block to build on it indirectly

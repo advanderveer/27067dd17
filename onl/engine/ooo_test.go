@@ -1,7 +1,10 @@
 package engine_test
 
 import (
+	"encoding/binary"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
@@ -33,19 +36,24 @@ func TestOoOHandling(t *testing.T) {
 
 	msg1 := &engine.Msg{}
 	o1.Handle(msg1)
+	time.Sleep(time.Millisecond)
 	test.Equals(t, []*engine.Msg{&engine.Msg{}}, handled)
 
 	msg2 := &engine.Msg{Block: &onl.Block{Prev: bid1}}
 	o1.Handle(msg2)
+	time.Sleep(time.Millisecond)
 	test.Equals(t, []*engine.Msg{&engine.Msg{}}, handled) //deferred
 
 	o1.Resolve(bid1)
+	time.Sleep(time.Millisecond)
 	test.Equals(t, []*engine.Msg{msg1, msg2}, handled) //now resolved
 
 	o1.Resolve(bid2)
+	time.Sleep(time.Millisecond)
 	test.Equals(t, []*engine.Msg{msg1, msg2}, handled) //should have done nothing
 
 	o1.Handle(msg2)
+	time.Sleep(time.Millisecond)
 	test.Equals(t, []*engine.Msg{msg1, msg2, msg2}, handled) //already resolved
 }
 
@@ -57,12 +65,12 @@ func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
 	o1.Resolve(bid1)
 	msg2 := &engine.Msg{Block: &onl.Block{Prev: bid1}}
 	o1.Handle(msg2)
+	time.Sleep(time.Millisecond)
 
 	test.Equals(t, []*engine.Msg{msg2}, handled) //should have handled the messages
 }
 
 func TestOutOfOrderRoundAndBlock(t *testing.T) {
-
 	t.Run("block then round", func(t *testing.T) {
 		var handled []*engine.Msg
 		h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
@@ -73,8 +81,10 @@ func TestOutOfOrderRoundAndBlock(t *testing.T) {
 
 		test.Equals(t, 0, len(handled)) //not handled (round+prev)
 		o1.Resolve(bid1)
+		time.Sleep(time.Millisecond)
 		test.Equals(t, 0, len(handled)) //not handled, round
 		o1.ResolveRound(1)
+		time.Sleep(time.Millisecond)
 
 		test.Equals(t, []*engine.Msg{msg2}, handled)
 	})
@@ -89,9 +99,44 @@ func TestOutOfOrderRoundAndBlock(t *testing.T) {
 
 		test.Equals(t, 0, len(handled)) //not handled (round+prev)
 		o1.ResolveRound(1)
+		time.Sleep(time.Millisecond)
 		test.Equals(t, 0, len(handled)) //not handled, round
 		o1.Resolve(bid1)
+		time.Sleep(time.Millisecond)
 
 		test.Equals(t, []*engine.Msg{msg2}, handled)
 	})
+}
+
+func TestOutOfOrderConcurrency(t *testing.T) {
+	h1 := engine.HandlerFunc(func(msg *engine.Msg) {})
+	o1 := engine.NewOutOfOrder(h1)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+
+		for i := uint64(0); i < 10000; i++ {
+			o1.ResolveRound(i)
+
+			var id onl.ID
+			binary.BigEndian.PutUint64(id[:], i)
+			o1.Resolve(id)
+		}
+
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		for i := uint64(0); i < 10000; i++ {
+			var id onl.ID
+			binary.BigEndian.PutUint64(id[:], i)
+			o1.Handle(&engine.Msg{Block: &onl.Block{Prev: id, Round: i}})
+		}
+	}()
+
+	wg.Wait()
+
 }
