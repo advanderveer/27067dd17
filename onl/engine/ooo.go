@@ -19,40 +19,84 @@ func (h HandlerFunc) Handle(msg *Msg) { h(msg) }
 //another block to be called later
 type OutOfOrder struct {
 	handler Handler
-	defers  map[onl.ID][]*Msg
+
+	onBlocks map[onl.ID][]*Msg
+	onRounds map[uint64][]*Msg
 }
 
 //NewOutOfOrder creates a new OutOfOrder
 func NewOutOfOrder(h Handler) *OutOfOrder {
-	return &OutOfOrder{handler: h, defers: make(map[onl.ID][]*Msg)}
+	return &OutOfOrder{
+		handler:  h,
+		onBlocks: make(map[onl.ID][]*Msg),
+		onRounds: make(map[uint64][]*Msg),
+	}
+}
+
+//ResolveRound will resolve blocks that are waiting on the round to start
+func (o *OutOfOrder) ResolveRound(nr uint64) {
+	defers, ok := o.onRounds[nr]
+	o.onRounds[nr] = nil
+	if ok {
+		for _, msg := range defers {
+			o.Handle(msg)
+		}
+	}
 }
 
 //Resolve will handle any messages that depended on this block
 func (o *OutOfOrder) Resolve(id onl.ID) {
-	defers, ok := o.defers[id]
+	defers, ok := o.onBlocks[id]
+	o.onBlocks[id] = nil
 	if ok {
 		for _, msg := range defers {
-			o.handler.Handle(msg)
+			o.Handle(msg)
 		}
 	}
-
-	o.defers[id] = nil //nil elements means the id is resolved
 }
 
-//Handle will try to handle the message unless it waits for a block to resolve
+//Handle will try to handle the message unless it waits for a block or round
+//to resolve first
 func (o *OutOfOrder) Handle(msg *Msg) {
-	dep := msg.Dependency()
-	if dep == onl.NilID { //no dependency
-		o.handler.Handle(msg)
-		return
+	var (
+		bdepResolved bool
+		rdepResolved bool
+	)
+
+	//aks for block and round deps
+	bdep, rdep := msg.Dependency()
+
+	//if there is a block dependency, check if it was resolved
+	//already or else add it to the block defer. In that case
+	//it will not be resolved
+	if bdep != onl.NilID {
+		ex, ok := o.onBlocks[bdep]
+		if ok && ex == nil {
+			bdepResolved = true
+		} else if !ok { //only add if not exist
+			ex = append(ex, msg)
+			o.onBlocks[bdep] = ex
+		}
+	} else {
+		bdepResolved = true //no block dep, always resolved
 	}
 
-	ex, ok := o.defers[dep]
-	if ok && ex == nil { //dep is already resolved
-		o.handler.Handle(msg)
-		return
+	//if there is a round dependency, check if it was already resolved
+	//or else schedule it for resolving and don't mark it as such
+	if rdep > 0 {
+		ex, ok := o.onRounds[rdep]
+		if ok && ex == nil {
+			rdepResolved = true
+		} else if !ok { //only add if ot exist
+			ex = append(ex, msg)
+			o.onRounds[rdep] = ex
+		}
+	} else {
+		rdepResolved = true //no round dep, always resolved
 	}
 
-	ex = append(ex, msg)
-	o.defers[dep] = ex
+	//if both are resolved we can finally call the handle
+	if rdepResolved && bdepResolved {
+		o.handler.Handle(msg)
+	}
 }

@@ -122,7 +122,6 @@ func (e *Engine) Update(ctx context.Context, f func(kv *onl.KV)) (err error) {
 
 	//handle our own write
 	e.handleWrite(w)
-
 	return
 }
 
@@ -144,6 +143,9 @@ func (e *Engine) Handle(msg *Msg) {
 }
 
 func (e *Engine) handleRound(round, ts uint64) {
+
+	//start handling blocks that we're to early
+	e.ooo.ResolveRound(round)
 
 	//read tip and current state from chain
 	tip, state, err := e.chain.State(onl.NilID)
@@ -180,7 +182,7 @@ func (e *Engine) handleRound(round, ts uint64) {
 	//sign the block
 	e.idn.Sign(b)
 
-	//handle the block as if we received it
+	//handle the block ourselves
 	e.handleBlock(b)
 }
 
@@ -204,13 +206,6 @@ func (e *Engine) handleWrite(w *onl.Write) {
 }
 
 func (e *Engine) handleBlock(b *onl.Block) {
-
-	//check if the block is for a round we didn't reach yet
-	round := e.clock.Round()
-	if b.Round > round {
-		e.logs.Printf("[INFO][%s] received block from round %d while we're at %d, skipping", e.idn, b.Round, round)
-		return
-	}
 
 	//append the block to the chain, any invalid blocks will be rejected here
 	//@TODO make append retry n configurable and have some exponential backoff
@@ -236,7 +231,7 @@ func (e *Engine) handleBlock(b *onl.Block) {
 	//handle any messages that were waiting on this block
 	id := b.Hash()
 	e.ooo.Resolve(id)
-	e.logs.Printf("[INFO][%s][%d] appended block %s to our chain", e.idn, round, id)
+	e.logs.Printf("[INFO][%s] appended block %s to our chain", e.idn, id)
 
 	//relay to peers
 	err := e.bc.Write(&Msg{Block: b})

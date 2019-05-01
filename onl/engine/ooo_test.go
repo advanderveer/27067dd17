@@ -60,3 +60,38 @@ func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
 
 	test.Equals(t, []*engine.Msg{msg2}, handled) //should have handled the messages
 }
+
+func TestOutOfOrderRoundAndBlock(t *testing.T) {
+
+	t.Run("block then round", func(t *testing.T) {
+		var handled []*engine.Msg
+		h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+		o1 := engine.NewOutOfOrder(h1)
+
+		msg2 := &engine.Msg{Block: &onl.Block{Round: 1, Prev: bid1}}
+		o1.Handle(msg2)
+
+		test.Equals(t, 0, len(handled)) //not handled (round+prev)
+		o1.Resolve(bid1)
+		test.Equals(t, 0, len(handled)) //not handled, round
+		o1.ResolveRound(1)
+
+		test.Equals(t, []*engine.Msg{msg2}, handled)
+	})
+
+	t.Run("round then block", func(t *testing.T) {
+		var handled []*engine.Msg
+		h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+		o1 := engine.NewOutOfOrder(h1)
+
+		msg2 := &engine.Msg{Block: &onl.Block{Round: 1, Prev: bid1}}
+		o1.Handle(msg2)
+
+		test.Equals(t, 0, len(handled)) //not handled (round+prev)
+		o1.ResolveRound(1)
+		test.Equals(t, 0, len(handled)) //not handled, round
+		o1.Resolve(bid1)
+
+		test.Equals(t, []*engine.Msg{msg2}, handled)
+	})
+}

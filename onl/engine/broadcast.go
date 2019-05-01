@@ -12,12 +12,12 @@ type Msg struct {
 
 // Dependency returns what block this message is dependant on the before it can
 // be handled (if any).
-func (msg *Msg) Dependency() (dep onl.ID) {
+func (msg *Msg) Dependency() (dep onl.ID, round uint64) {
 	if msg.Write != nil || msg.Block == nil {
-		return onl.NilID
+		return onl.NilID, 0
 	}
 
-	return msg.Block.Prev
+	return msg.Block.Prev, msg.Block.Round
 }
 
 //Broadcast provide reliable message dissemation
