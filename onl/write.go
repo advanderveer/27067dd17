@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"sort"
+	"sync"
 
 	"github.com/advanderveer/27067dd17/onl/ssi"
 	"github.com/advanderveer/27067dd17/vrf/ed25519"
@@ -36,7 +37,22 @@ type Write struct {
 	//Signature of the block, signed by the identity of PK such that it can be verified
 	//that the block has not been tampered with
 	Signature [ed25519.SignatureSize]byte
+
+	//@TODO we rather get rid of the lock
+	mu sync.RWMutex
 }
+
+//Lock the write
+func (w *Write) Lock() { w.mu.Lock() }
+
+//Unlock the write
+func (w *Write) Unlock() { w.mu.Unlock() }
+
+//RLock the write
+func (w *Write) RLock() { w.mu.RLock() }
+
+//RUnlock the write
+func (w *Write) RUnlock() { w.mu.RUnlock() }
 
 // HasDepositFor returns whether this write writes a deposit for the provided
 // identity. This is used to find a random seed for the VRF

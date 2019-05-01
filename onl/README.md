@@ -207,7 +207,7 @@ condition trasnsactions? https://github.com/perlin-network/life
 - [x] Out-Of-Order is thread safe, multiple go-routines can call resolve and
   handle.
 - [x] Handles are called in different go routines
-- [ ] Engine tests passes with race detector
+- [x] All tests pass with the race detector
 
 #Finalization V1
 - [ ] If a stake holder has chosen a certain prev block to build on it indirectly

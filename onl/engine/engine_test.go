@@ -230,16 +230,16 @@ func TestEngine3WriteConsensusStepByStep(t *testing.T) {
 	}
 
 	//wait for writes to have spread to all members
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 500)
 
 	//fire rounds
 	for i := 0; i < nRounds; i++ {
 		osc.Fire()
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 500)
 	}
 
 	//more settle down time?
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 500)
 
 	//wrap it all up
 	clean1()

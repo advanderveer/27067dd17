@@ -169,6 +169,9 @@ func (e *Engine) handleRound(round, ts uint64) {
 	e.logs.Printf("[INFO][%s][%d] we have %d stake to propose blocks, minting on tip %s", e.idn, round, stake, tip)
 	b := e.idn.Mint(ts, tip, e.genesis, round)
 
+	//@TODO picking causes a race condition to trigger since the write is simultaneously
+	//read as part of broadcast serialization
+
 	//pick writes that are suited for the new block
 	e.pool.Pick(state, func(w *onl.Write) bool {
 		b.AppendWrite(w)
@@ -198,8 +201,16 @@ func (e *Engine) handleWrite(w *onl.Write) {
 		return
 	}
 
+	// @TODO below write causes race condition with simultaneous write to the
+	// write's transaction data. Written to by the commit in the ssi.DB
+
 	//relay to peers
+	//@TODO we lock the write here because in some conditions it is simultaneously
+	//being written to by the ssi.DB commit. We rather solve the root of the issue
+	//instead of introductin another read lock
+	w.RLock()
 	err = e.bc.Write(&Msg{Write: w})
+	w.RUnlock()
 	if err != nil {
 		e.logs.Printf("[ERRO][%s] failed to relay write to peers: %v", e.idn, err)
 	}

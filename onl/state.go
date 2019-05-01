@@ -63,7 +63,12 @@ func (s *State) Apply(w *Write, dry bool) (err error) {
 	//@TODO check signature
 
 	//commit to ssi db, or return conflict
+	//@TODO we lock the write here because in some conditions it is simultaneously
+	//being written (read) to the broadcast. This solution is rather in-elegant and
+	//we rather solve the root cause of that issue
+	w.Lock()
 	err = s.db.Commit(w.TxData, dry)
+	w.Unlock()
 	if err == ssi.ErrConflict {
 		return ErrApplyConflict
 	}

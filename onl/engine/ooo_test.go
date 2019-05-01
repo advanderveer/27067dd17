@@ -30,36 +30,56 @@ func init() {
 }
 
 func TestOoOHandling(t *testing.T) {
+	var mu sync.Mutex
 	var handled []*engine.Msg
-	h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+	h1 := engine.HandlerFunc(func(msg *engine.Msg) {
+		mu.Lock()
+		defer mu.Unlock()
+		handled = append(handled, msg)
+	})
 	o1 := engine.NewOutOfOrder(h1)
 
 	msg1 := &engine.Msg{}
 	o1.Handle(msg1)
 	time.Sleep(time.Millisecond)
+	mu.Lock()
 	test.Equals(t, []*engine.Msg{&engine.Msg{}}, handled)
+	mu.Unlock()
 
 	msg2 := &engine.Msg{Block: &onl.Block{Prev: bid1}}
 	o1.Handle(msg2)
 	time.Sleep(time.Millisecond)
+	mu.Lock()
 	test.Equals(t, []*engine.Msg{&engine.Msg{}}, handled) //deferred
+	mu.Unlock()
 
 	o1.Resolve(bid1)
 	time.Sleep(time.Millisecond)
+	mu.Lock()
 	test.Equals(t, []*engine.Msg{msg1, msg2}, handled) //now resolved
+	mu.Unlock()
 
 	o1.Resolve(bid2)
 	time.Sleep(time.Millisecond)
+	mu.Lock()
 	test.Equals(t, []*engine.Msg{msg1, msg2}, handled) //should have done nothing
+	mu.Unlock()
 
 	o1.Handle(msg2)
 	time.Sleep(time.Millisecond)
+	mu.Lock()
 	test.Equals(t, []*engine.Msg{msg1, msg2, msg2}, handled) //already resolved
+	mu.Unlock()
 }
 
 func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
+	var mu sync.Mutex
 	var handled []*engine.Msg
-	h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+	h1 := engine.HandlerFunc(func(msg *engine.Msg) {
+		mu.Lock()
+		defer mu.Unlock()
+		handled = append(handled, msg)
+	})
 	o1 := engine.NewOutOfOrder(h1)
 
 	o1.Resolve(bid1)
@@ -67,44 +87,68 @@ func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
 	o1.Handle(msg2)
 	time.Sleep(time.Millisecond)
 
+	mu.Lock()
 	test.Equals(t, []*engine.Msg{msg2}, handled) //should have handled the messages
+	mu.Unlock()
 }
 
 func TestOutOfOrderRoundAndBlock(t *testing.T) {
 	t.Run("block then round", func(t *testing.T) {
+		var mu sync.Mutex
 		var handled []*engine.Msg
-		h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+		h1 := engine.HandlerFunc(func(msg *engine.Msg) {
+			mu.Lock()
+			defer mu.Unlock()
+			handled = append(handled, msg)
+		})
 		o1 := engine.NewOutOfOrder(h1)
 
 		msg2 := &engine.Msg{Block: &onl.Block{Round: 1, Prev: bid1}}
 		o1.Handle(msg2)
 
+		mu.Lock()
 		test.Equals(t, 0, len(handled)) //not handled (round+prev)
+		mu.Unlock()
 		o1.Resolve(bid1)
 		time.Sleep(time.Millisecond)
+		mu.Lock()
 		test.Equals(t, 0, len(handled)) //not handled, round
+		mu.Unlock()
 		o1.ResolveRound(1)
 		time.Sleep(time.Millisecond)
 
+		mu.Lock()
 		test.Equals(t, []*engine.Msg{msg2}, handled)
+		mu.Unlock()
 	})
 
 	t.Run("round then block", func(t *testing.T) {
+		var mu sync.Mutex
 		var handled []*engine.Msg
-		h1 := engine.HandlerFunc(func(msg *engine.Msg) { handled = append(handled, msg) })
+		h1 := engine.HandlerFunc(func(msg *engine.Msg) {
+			mu.Lock()
+			defer mu.Unlock()
+			handled = append(handled, msg)
+		})
 		o1 := engine.NewOutOfOrder(h1)
 
 		msg2 := &engine.Msg{Block: &onl.Block{Round: 1, Prev: bid1}}
 		o1.Handle(msg2)
 
+		mu.Lock()
 		test.Equals(t, 0, len(handled)) //not handled (round+prev)
+		mu.Unlock()
 		o1.ResolveRound(1)
 		time.Sleep(time.Millisecond)
+		mu.Lock()
 		test.Equals(t, 0, len(handled)) //not handled, round
+		mu.Unlock()
 		o1.Resolve(bid1)
 		time.Sleep(time.Millisecond)
 
+		mu.Lock()
 		test.Equals(t, []*engine.Msg{msg2}, handled)
+		mu.Unlock()
 	})
 }
 
