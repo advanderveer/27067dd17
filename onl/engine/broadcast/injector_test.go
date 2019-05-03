@@ -45,7 +45,7 @@ func TestInjectorCollection(t *testing.T) {
 	inj2.To(inj1.Mem)
 
 	test.Ok(t, inj2.Write(&engine.Msg{}))
-	time.Sleep(time.Millisecond)
+	time.Sleep(time.Millisecond * 5)
 
 	msgs := inj1.Collect()
 	test.Equals(t, 1, len(msgs))

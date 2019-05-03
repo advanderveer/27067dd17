@@ -2,12 +2,14 @@ package engine
 
 import (
 	"github.com/advanderveer/27067dd17/onl"
+	"github.com/advanderveer/27067dd17/onl/engine/sync"
 )
 
 //Msg transports information over the broadcast network.
 type Msg struct {
 	Block *onl.Block
 	Write *onl.Write
+	Sync  *sync.Sync
 }
 
 // Dependency returns what block this message is dependant on the before it can

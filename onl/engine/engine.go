@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/advanderveer/27067dd17/onl"
+	"github.com/advanderveer/27067dd17/onl/engine/sync"
 )
 
 //Clock provides an interface for synchronized rounds and reasonably accurate timestamps
@@ -18,16 +19,17 @@ type Clock interface {
 
 // Engine reads messages from the broadcast and advances through rounds
 type Engine struct {
-	bc      Broadcast
+	bc    Broadcast
+	clock Clock
+	chain *onl.Chain
+	ooo   *OutOfOrder
+	pool  *MemPool
+
 	logs    *log.Logger
-	clock   Clock
 	idn     *onl.Identity
 	done    chan struct{}
-	chain   *onl.Chain
-	ooo     *OutOfOrder
 	maxw    int
 	genesis onl.ID
-	pool    *MemPool
 }
 
 // New initiates an engine
@@ -81,7 +83,6 @@ func New(logw io.Writer, bc Broadcast, clock Clock, idn *onl.Identity, c *onl.Ch
 			}
 
 			//handle out-of-order
-			//@TODO (#3) out-of-order needs to be thread safe
 			e.ooo.Handle(msg)
 		}
 
@@ -136,9 +137,26 @@ func (e *Engine) Handle(msg *Msg) {
 		e.handleWrite(msg.Write)
 	} else if msg.Block != nil {
 		e.handleBlock(msg.Block)
+	} else if msg.Sync != nil {
+		e.handleSyncRequest(msg.Sync)
 	} else {
 		e.logs.Printf("[INFO][%s] read messages that is neither a write or a block, ignoring", e.idn)
 		return
+	}
+}
+
+func (e *Engine) handleSyncRequest(s *sync.Sync) {
+	for _, id := range s.IDs {
+		b, _, _, err := e.chain.Read(id)
+		if err != nil {
+			e.logs.Printf("[INFO][%s] peer requested block %s that we failed to read: %v", e.idn, id, err)
+			continue
+		}
+
+		err = s.Push(b)
+		if err != nil {
+			e.logs.Printf("[ERRO][%s] failed to push block %s as respons to a sync: %v", e.idn, id, err)
+		}
 	}
 }
 
@@ -167,10 +185,9 @@ func (e *Engine) handleRound(round, ts uint64) {
 
 	//mint a block for our current tip
 	e.logs.Printf("[INFO][%s][%d] we have %d stake to propose blocks, minting on tip %s", e.idn, round, stake, tip)
-	b := e.idn.Mint(ts, tip, e.genesis, round)
 
-	//@TODO picking causes a race condition to trigger since the write is simultaneously
-	//read as part of broadcast serialization
+	//@TODO find a stable block by walking the chain, not hardcode genesis
+	b := e.idn.Mint(ts, tip, e.genesis, round)
 
 	//pick writes that are suited for the new block
 	e.pool.Pick(state, func(w *onl.Write) bool {
@@ -200,9 +217,6 @@ func (e *Engine) handleWrite(w *onl.Write) {
 		e.logs.Printf("[INFO][%s] failed to add write to mempool: %v", e.idn, err)
 		return
 	}
-
-	// @TODO below write causes race condition with simultaneous write to the
-	// write's transaction data. Written to by the commit in the ssi.DB
 
 	//relay to peers
 	//@TODO we lock the write here because in some conditions it is simultaneously
@@ -235,9 +249,6 @@ func (e *Engine) handleBlock(b *onl.Block) {
 
 		break //append went through
 	}
-
-	//@TODO if this blocks causes new finalizations it should remove writes from
-	//the mempool and trim unused blocks.
 
 	//handle any messages that were waiting on this block
 	id := b.Hash()

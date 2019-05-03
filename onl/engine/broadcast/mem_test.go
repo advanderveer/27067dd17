@@ -4,12 +4,25 @@ import (
 	"io"
 	"testing"
 
+	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
+	"github.com/advanderveer/27067dd17/onl/engine/sync"
 	"github.com/advanderveer/go-test"
 )
 
 var _ engine.Broadcast = &broadcast.Mem{}
+
+var (
+	//some test ids
+	bid1 = onl.ID{}
+	bid2 = onl.ID{}
+)
+
+func init() {
+	bid1[0] = 0x01
+	bid2[0] = 0x02
+}
 
 func TestBroadcast(t *testing.T) {
 	bc1 := broadcast.NewMem(1)
@@ -30,4 +43,32 @@ func TestBroadcast(t *testing.T) {
 
 		test.Ok(t, bc1.Write(msg1)) //should still work and not panic
 	})
+}
+
+func TestSyncMessage(t *testing.T) {
+	bc1 := broadcast.NewMem(1)
+	bc2 := broadcast.NewMem(1)
+	bc1.To(bc2)
+
+	//bc1 writes sync request to b2
+	msg1 := &engine.Msg{Sync: &sync.Sync{IDs: []onl.ID{bid1}}}
+	test.Ok(t, bc1.Write(msg1))
+
+	//bc2 reads sync request
+	msg2 := &engine.Msg{}
+	test.Ok(t, bc2.Read(msg2))
+
+	//bc2 pushes block to sync back
+	b1 := &onl.Block{Round: 1}
+	test.Ok(t, msg2.Sync.Push(b1))
+
+	//bc1 should read a block message
+	msg3 := &engine.Msg{}
+	test.Ok(t, bc1.Read(msg3))
+	test.Equals(t, uint64(1), msg3.Block.Round)
+
+	//after close writing a sync block should return closed error
+	test.Ok(t, bc1.Close())
+	b2 := &onl.Block{Round: 1}
+	test.Equals(t, broadcast.ErrClosed, msg2.Sync.Push(b2))
 }

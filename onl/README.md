@@ -165,6 +165,8 @@ condition trasnsactions? https://github.com/perlin-network/life
   this grows the storage unbounded, but has not monetary incentive
 - _Will we allow empty blocks?_ When we not allow this the protocol cannot make progress
   when there are no writes to include. Or it will at least include the coinbase.
+- _Can identities create a whole lot of blocks in the future and then switch to
+  another key?_ Make sure that they become invalid once the round is reached
 
 ## Future Plans
 - Optional with WebRTC: https://github.com/pion/webrtc for NAT punching?
@@ -177,9 +179,70 @@ condition trasnsactions? https://github.com/perlin-network/life
 - Ouroboros Praos, simple explanation: https://medium.com/unraveling-the-ouroboros/introduction-to-ouroboros-1c2324912193
 - Creatking VRF with weaker primitives: https://eprint.iacr.org/2016/918.pdf
 
-## Plan of Attack:
+##
+## Syncing Design
+##
 
-#VRF Seed V2
+- _How are peers listed/found/selected/rotated?_ We will need them for syncing:
+  Bitcoin has a custom peer discovery algorithm: https://en.bitcoin.it/wiki/Satoshi_Client_Node_Discovery
+  Ethereum uses a Kademlia like DHT: https://github.com/ethereum/devp2p/blob/master/discv4.md
+- _How are chains of peers diffed effeciently?_ If the chain is fully empty
+- _How to catch up with live new blocks while syncing?_ must be fast enough, all
+  stackup up in the Out-of-Order?
+- _How does the validation of incoming blocks work?_ How to protect against wrong
+  blocks being delivered?
+- _Can a snapshot of the state be maintained and shared?_ to speed it all up?
+
+- Make it a better situation then: https://github.com/ethereum/mist/issues/3738#issuecomment-390892738
+  and https://github.com/ethereum/go-ethereum/issues/16251#issuecomment-371449572
+- Bitcoin downloads from its peers: https://bitcoin.stackexchange.com/questions/55244/what-will-happen-if-a-block-is-lost-on-a-peer
+- Bitcoin connects to 8 peers typically: https://bitcoin.stackexchange.com/questions/56775/how-many-peers-do-you-need-to-securely-synchronize-with-the-blockchain
+- Ethereum Docs on Sync: https://github.com/ethereumproject/go-ethereum/wiki/Blockchain-Synchronisation
+
+## Part 1 - P2P Layer
+  This layer is responsible for providing the member with peer connections.
+  - Bitcoin has a custom peer discovery algorithm: https://en.bitcoin.it/wiki/Satoshi_Client_Node_Discovery
+  - Ethereum uses a Kademlia like DHT: https://github.com/ethereum/devp2p/blob/master/discv4.md
+  - Then there is WebRTC (not covering the DHT part): https://www.html5rocks.com/en/tutorials/webrtc/infrastructure/
+  - Perlin's Noise: https://github.com/perlin-network/noise
+  - For datacenter deployments: Serf is a nice option
+
+## Part 2 - Chain Diffing and transfer
+ Given reliable connections to a number of peers, how to best sync over the required
+ data and verify it validity. Can the same logic be used if the peer misses a few blocks.
+
+ - _Snapshot syncing:_ Each block comes with a snapshot commitment, the commitments
+   of (super majority) finalized blocks can be used as a starting points. Peers can
+   be contacted to provide such a snapshot (_What incenstive to keep it?_) and this
+   snapshot can be fed as the genesis state. (_What if a new snapshot is reached while old snapshot is being synced?_)
+ - _Periodic block syncing_ Peers can nevertheless miss a block or catch up after
+   a snapshot sync. So we will need to periodic block syncing by allowing the
+   out-of-order structure ask peers for missing blocks or subchains.
+ - _Old data trimming_ Data keys must actively be kept in the state or else they
+   will be removed. This is aggressive but should provide a configurable upper bound
+   to the stability
+
+## Part 3 - Snapshots and fast Member bootstrapping
+ Looking at the Ethereum situation it now takes days or weeks to setup a full node.
+ As we're also building large chains we would like some snapshotting mechanism.
+
+ Discussion for BitCoin here: https://www.reddit.com/r/btc/comments/5i269s/blockchain_snapshots_to_help_with_scaling/
+ - TXO Commitment: https://petertodd.org/2016/delayed-txo-commitments
+ - Merklix Tree: https://www.deadalnix.me/2016/09/29/using-merklix-tree-to-checkpoint-an-utxo-set/
+ - Bitcoin Cash Snaphost: https://www.reddit.com/r/btc/comments/9pzyqn/bitcoin_cash_and_utxo_snapshots/
+ - UTXO Commit: https://github.com/tomasvdw/bips/blob/master/BIP-UtxoCommitBucket.mediawiki
+ - Flat ECMH Commit: https://lists.linuxfoundation.org/pipermail/bitcoin-ml/2018-March/000688.html
+   blog post: https://www.yours.org/content/first-utxo-commitment-on-testnet-db7bf45bf83d
+ - Ethereums StateRoot Commit: https://blog.ethereum.org/2015/06/26/state-tree-pruning/
+ - Ethereums Merkle Patricia Trie used for this: https://github.com/ethereum/wiki/wiki/Patricia-Tree
+ - IOTAL local snapshots: https://blog.iota.org/coming-up-local-snapshots-7018ff0ed5db
+
+
+##
+## Plan of Attack:
+##
+
+# 1. VRF Seed V2
 - [x] The VRF seeds needs to a include a source of randomness that cannot be known
   when an identity commits to its VRF key. We will say that this will always
   be the Hash of the block that encodes the deposit stake
@@ -191,7 +254,7 @@ condition trasnsactions? https://github.com/perlin-network/life
   there is a rule that prevents stake deposits to be used too quickly (needs to
   settle in finalized block)
 
-#Write Nonce and Mempool V2
+# 2. Write Nonce and Mempool V2
 - [x] Each write is signed with a large random nonce that is generated by the proposer.
   It is in the proposers best interest to pick something that is definitely not
   being used before, probably by simply generating a large random nr
@@ -199,7 +262,7 @@ condition trasnsactions? https://github.com/perlin-network/life
   currently in the longest chain and already applied. This will prevent the
   replay of already applied writes (even if they have no reads).
 
-#OutOfOrder V2
+# 3. OutOfOrder V2
 - [x] Out-Of-Order will accepts a block for any round, blocks for future rounds
   will be stored and handle will be called when that round is reached. Creating
   blocks in a far future round has very little benefit through as its weight
@@ -209,12 +272,39 @@ condition trasnsactions? https://github.com/perlin-network/life
 - [x] Handles are called in different go routines
 - [x] All tests pass with the race detector
 
-#Finalization V1
+# 4. Finalization V1
 - [x] Blocks in the chain keep track of the total deposit that has been stored such
   that it can be asserted if a (super)majority has voted their stake on it
 - [x] If a stake holder has chosen a certain prev block to build on it indirectly
   votes on its ancestors. If a block has received a (super)majority of the stake in
   this way, it can be marked as finalized.
+
+# 5. Out Of Order Sync V1
+- [x] Both Mem and TCP broadcast implementations should allow writing back blocks to
+  a peer when a sync message is received
+- [ ] When testing the engine it should assert that when connection between two peers
+  was broken for a few rounds, after reconnecting the should be able to sync up and
+  reach consensus again.
+
+- [ ] Engine minting should find the deposit block for its identity itself, not by
+  hardcoding the genesis
+
+# 6. Failure Mode Testing V1
+- [ ] When the network splits exactly in half both sides shouldn't be able to
+  finalize. When connectivitity between the two is re-estabilished, the missing
+  blocks should be exchanged. Common tip calculated and should otherwise continue
+  as expected.
+- [ ] When a minority splits off it will continue on its own but not finalize, when
+  it re-joins the majority segment there consensus shouldn't change while the minority
+  adapts and takes over the majorities conensus
+- [ ] When a member's clock skews them into starting rounds too early it should find himself
+  working ahead in time which will cause blocks to arrive in rounds too early and have a
+  low chance of being ranked highly (low sum weight)
+- [ ] When a member's clock skews them into starting rounds too late it will propose blocks
+  that arrive in old rounds that the majority cannot vote on making it a low chance
+  of getting in the longest tip
+- [ ] When a member's latency (tx/rx) is too low it will receive winning blocks too late
+  and won't be able to deliver winning blocks in time for others to build on.
 
 #Trimming V1
 - [ ] The writes in finalized blocks can definitively removed from the mempool

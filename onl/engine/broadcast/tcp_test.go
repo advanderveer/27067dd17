@@ -9,6 +9,7 @@ import (
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
+	"github.com/advanderveer/27067dd17/onl/engine/sync"
 	"github.com/advanderveer/go-test"
 )
 
@@ -75,4 +76,40 @@ func TestMaxConnHandling(t *testing.T) {
 
 	//writing to the new connection should fail
 	test.Assert(t, bc2.Write(&engine.Msg{}) != nil, "write should fail")
+}
+
+func TestSyncMessageHandling(t *testing.T) {
+	bc1, err := broadcast.NewTCP(os.Stderr, ":0", 10, 100)
+	test.Ok(t, err)
+	bc2, err := broadcast.NewTCP(os.Stderr, ":0", 10, 100)
+	test.Ok(t, err)
+	bc1.To(time.Millisecond*10, bc2.Addr())
+
+	//bc1 writes sync request to b2
+	msg1 := &engine.Msg{Sync: &sync.Sync{IDs: []onl.ID{bid1}}}
+	test.Ok(t, bc1.Write(msg1))
+
+	//bc2 reads sync request
+	msg2 := &engine.Msg{}
+	test.Ok(t, bc2.Read(msg2))
+
+	//bc2 pushes block to sync back
+	b1 := &onl.Block{Round: 1}
+	test.Ok(t, msg2.Sync.Push(b1))
+
+	//bc1 should read a block message
+	msg3 := &engine.Msg{}
+	test.Ok(t, bc1.Read(msg3))
+	test.Equals(t, uint64(1), msg3.Block.Round)
+
+	//after close the read should fail with an error
+	test.Ok(t, bc1.Close())
+	test.Ok(t, bc2.Close())
+
+	//after close we can pus without error or panic
+	//@TODO this is not consistent with the mem implementation, as there it returns
+	//errClosed
+	b2 := &onl.Block{Round: 1}
+	test.Ok(t, msg2.Sync.Push(b2))
+
 }

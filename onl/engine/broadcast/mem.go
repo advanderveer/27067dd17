@@ -9,13 +9,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 )
 
 //Mem is an in-memory broadcast implementation
 type Mem struct {
 	closed bool
-	bufc   chan *bytes.Buffer
+	bufc   chan *mmsg
 	peers  map[*Mem]time.Duration
 	mu     sync.RWMutex
 
@@ -23,11 +24,16 @@ type Mem struct {
 	maxl time.Duration
 }
 
+type mmsg struct {
+	remote *Mem
+	buf    *bytes.Buffer
+}
+
 //NewMem creates an in-memory broadcast endpoint
 func NewMem(bufn int) (m *Mem) {
 	m = &Mem{
 		peers: make(map[*Mem]time.Duration),
-		bufc:  make(chan *bytes.Buffer, bufn),
+		bufc:  make(chan *mmsg, bufn),
 	}
 	return
 }
@@ -39,29 +45,51 @@ func (bc *Mem) WithLatency(min, max time.Duration) {
 	bc.maxl = max
 }
 
+func (bc *Mem) latency() (l time.Duration) {
+	if bc.maxl > bc.minl {
+		l = bc.minl + time.Duration(rand.Int63n(int64(bc.maxl)-int64(bc.minl)))
+	}
+
+	return
+}
+
 //To will add another broadcast endpoint for this endpoint to write messages to
 func (bc *Mem) To(peers ...*Mem) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	for _, p := range peers {
-		l := time.Duration(0)
-		if bc.maxl > bc.minl {
-			l = bc.minl + time.Duration(rand.Int63n(int64(bc.maxl)-int64(bc.minl)))
-		}
-
-		bc.peers[p] = l
+		bc.peers[p] = bc.latency()
 	}
 }
 
-//Read a message from the broadcast
+//Read a message sent by peers
 func (bc *Mem) Read(msg *engine.Msg) (err error) {
 	rmsg := <-bc.bufc
 	if rmsg == nil {
 		return io.EOF
 	}
 
-	dec := gob.NewDecoder(rmsg)
-	return dec.Decode(msg)
+	dec := gob.NewDecoder(rmsg.buf)
+	err = dec.Decode(msg)
+	if err != nil {
+		return err
+	}
+
+	if msg.Sync != nil {
+		msg.Sync.SetWF(func(b *onl.Block) (err error) {
+			buf := bytes.NewBuffer(nil)
+			enc := gob.NewEncoder(buf)
+			err = enc.Encode(&engine.Msg{Block: b})
+			if err != nil {
+				return fmt.Errorf("failed to encode broadcast message: %v", err)
+			}
+
+			//note: latency may be added, synchronous
+			return peerWrite(bc, rmsg.remote, buf.Bytes(), bc.latency())
+		})
+	}
+
+	return
 }
 
 //Write a message to the broadcast
@@ -76,20 +104,26 @@ func (bc *Mem) Write(msg *engine.Msg) (err error) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	for peer, latency := range bc.peers {
+		go peerWrite(bc, peer, buf.Bytes(), latency)
+	}
 
-		go func(peer *Mem, latency time.Duration) {
-			if latency > 0 {
-				time.Sleep(latency)
-			}
+	return
+}
 
-			peer.mu.RLock()
-			defer peer.mu.RUnlock()
-			if peer.closed {
-				return
-			}
+func peerWrite(from *Mem, to *Mem, b []byte, latency time.Duration) (err error) {
+	if latency > 0 {
+		time.Sleep(latency)
+	}
 
-			peer.bufc <- bytes.NewBuffer(buf.Bytes())
-		}(peer, latency)
+	to.mu.RLock()
+	defer to.mu.RUnlock()
+	if to.closed {
+		return ErrClosed
+	}
+
+	to.bufc <- &mmsg{
+		remote: from,
+		buf:    bytes.NewBuffer(b),
 	}
 
 	return

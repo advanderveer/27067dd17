@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 )
 
@@ -17,7 +18,7 @@ import (
 type TCP struct {
 	ln     net.Listener
 	logs   *log.Logger
-	peers  map[net.Addr]*peer
+	peers  map[net.Addr]*tcppeer
 	mu     sync.RWMutex
 	cwg    sync.WaitGroup
 	conns  chan net.Conn
@@ -25,7 +26,7 @@ type TCP struct {
 	in     chan *engine.Msg
 }
 
-type peer struct {
+type tcppeer struct {
 	conn net.Conn
 	enc  *gob.Encoder
 }
@@ -36,7 +37,7 @@ func NewTCP(logw io.Writer, bind string, maxConn, maxBuf int) (bc *TCP, err erro
 		conns: make(chan net.Conn, maxConn),
 		logs:  log.New(logw, "", 0),
 		in:    make(chan *engine.Msg, maxBuf),
-		peers: make(map[net.Addr]*peer),
+		peers: make(map[net.Addr]*tcppeer),
 	}
 
 	//listen on a random available port
@@ -95,6 +96,19 @@ func (bc *TCP) handleConn(conn net.Conn) {
 			return
 		}
 
+		//for sync messages we provide a return func for bi-directional sending
+		if msg.Sync != nil {
+			enc := gob.NewEncoder(conn)
+			msg.Sync.SetWF(func(b *onl.Block) (err error) {
+				err = enc.Encode(&engine.Msg{Block: b})
+				if err != nil && err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
+					bc.logs.Printf("[ERRO] failed to encode sync message to %s: %v", conn.RemoteAddr(), err)
+				}
+
+				return nil
+			})
+		}
+
 		//send to incoming channel for consumer to read from
 		bc.in <- msg
 	}
@@ -116,10 +130,15 @@ func (bc *TCP) To(to time.Duration, peers ...net.Addr) (err error) {
 		}
 
 		//keep conn info for later writing
-		bc.peers[p] = &peer{
+		bc.peers[p] = &tcppeer{
 			conn: conn,
 			enc:  gob.NewEncoder(conn),
 		}
+
+		//handle incoming message from connecting peers
+		go bc.handleConn(conn)
+
+		//@TODO handle any incoming messages from the peers we connect to
 	}
 
 	return
@@ -174,9 +193,6 @@ func (bc *TCP) Close() (err error) {
 		}
 	}
 
-	bc.cwg.Wait() //wait for incoming conn's to end
-	close(bc.in)  //read will now return EOF
-
 	//shutdown outgoing connections
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
@@ -186,6 +202,9 @@ func (bc *TCP) Close() (err error) {
 			return fmt.Errorf("failed to close tcp connection to peer: %v", err)
 		}
 	}
+
+	bc.cwg.Wait() //wait for incoming conn's to end
+	close(bc.in)  //read will now return EOF
 
 	//mark as closed
 	bc.closed = true
