@@ -247,9 +247,9 @@ func TestEngine3WriteConsensusStepByStep(t *testing.T) {
 	clean3()
 
 	//draw
-	drawPNG(t, e1, "e1.png")
-	drawPNG(t, e2, "e2.png")
-	drawPNG(t, e3, "e3.png")
+	// drawPNG(t, e1, "e1.png")
+	// drawPNG(t, e2, "e2.png")
+	// drawPNG(t, e3, "e3.png")
 
 	//should all have the same tip
 	test.Equals(t, e1.Tip(), e2.Tip())
@@ -272,4 +272,52 @@ func TestEngine3WriteConsensusStepByStep(t *testing.T) {
 			t.Errorf("didn't reach consensus on write %d: %v", i, r)
 		}
 	}
+}
+
+func TestBlockSyncing(t *testing.T) {
+	osc := clock.NewMemOscillator()
+
+	idn1 := onl.NewIdentity([]byte{0x01})
+	idn2 := onl.NewIdentity([]byte{0x02})
+
+	genf := func(kv *onl.KV) {
+		kv.CoinbaseTransfer(idn1.PK(), 1)
+		kv.DepositStake(idn1.PK(), 1, idn1.TokenPK())
+		kv.CoinbaseTransfer(idn2.PK(), 1)
+		kv.DepositStake(idn2.PK(), 1, idn2.TokenPK())
+	}
+
+	bc1, e1, clean1 := testEngine(t, osc, idn1, genf)
+	bc2, e2, clean2 := testEngine(t, osc, idn2, genf)
+
+	bc1.To(bc2)
+	bc2.To(bc1)
+
+	osc.Fire() //round-1, wait for propagation
+	time.Sleep(time.Millisecond * 100)
+
+	//decouple broadcast by configuring super high latency
+	bc1.WithLatency(time.Hour*1000, time.Hour*2000)
+	bc2.WithLatency(time.Hour*1000, time.Hour*2000)
+
+	osc.Fire() //round 2, blocks shouldn't arrive at either
+	time.Sleep(time.Millisecond * 100)
+
+	//re-couple broadcasts
+	bc1.WithLatency(0, 0)
+	bc2.WithLatency(0, 0)
+
+	osc.Fire()
+	time.Sleep(time.Millisecond * 100)
+	osc.Fire()
+	time.Sleep(time.Millisecond * 500)
+
+	//should all have the same tip, as sync has kicked in
+	test.Equals(t, e1.Tip(), e2.Tip())
+
+	clean1()
+	clean2()
+
+	drawPNG(t, e1, "e1.png")
+	drawPNG(t, e2, "e2.png")
 }

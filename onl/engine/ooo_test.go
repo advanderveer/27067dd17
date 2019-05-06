@@ -8,6 +8,7 @@ import (
 
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
+	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
 	"github.com/advanderveer/go-test"
 )
 
@@ -30,6 +31,7 @@ func init() {
 }
 
 func TestOoOHandling(t *testing.T) {
+	bc := broadcast.NewMem(100)
 	var mu sync.Mutex
 	var handled []*engine.Msg
 	h1 := engine.HandlerFunc(func(msg *engine.Msg) {
@@ -37,7 +39,7 @@ func TestOoOHandling(t *testing.T) {
 		defer mu.Unlock()
 		handled = append(handled, msg)
 	})
-	o1 := engine.NewOutOfOrder(h1)
+	o1 := engine.NewOutOfOrder(h1, bc)
 
 	msg1 := &engine.Msg{}
 	o1.Handle(msg1)
@@ -73,6 +75,7 @@ func TestOoOHandling(t *testing.T) {
 }
 
 func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
+	bc := broadcast.NewMem(100)
 	var mu sync.Mutex
 	var handled []*engine.Msg
 	h1 := engine.HandlerFunc(func(msg *engine.Msg) {
@@ -80,7 +83,7 @@ func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
 		defer mu.Unlock()
 		handled = append(handled, msg)
 	})
-	o1 := engine.NewOutOfOrder(h1)
+	o1 := engine.NewOutOfOrder(h1, bc)
 
 	o1.Resolve(bid1)
 	msg2 := &engine.Msg{Block: &onl.Block{Prev: bid1}}
@@ -94,6 +97,7 @@ func TestOutOfOrderBeforeAnyHandle(t *testing.T) {
 
 func TestOutOfOrderRoundAndBlock(t *testing.T) {
 	t.Run("block then round", func(t *testing.T) {
+		bc := broadcast.NewMem(100)
 		var mu sync.Mutex
 		var handled []*engine.Msg
 		h1 := engine.HandlerFunc(func(msg *engine.Msg) {
@@ -101,7 +105,7 @@ func TestOutOfOrderRoundAndBlock(t *testing.T) {
 			defer mu.Unlock()
 			handled = append(handled, msg)
 		})
-		o1 := engine.NewOutOfOrder(h1)
+		o1 := engine.NewOutOfOrder(h1, bc)
 
 		msg2 := &engine.Msg{Block: &onl.Block{Round: 1, Prev: bid1}}
 		o1.Handle(msg2)
@@ -123,6 +127,7 @@ func TestOutOfOrderRoundAndBlock(t *testing.T) {
 	})
 
 	t.Run("round then block", func(t *testing.T) {
+		bc := broadcast.NewMem(100)
 		var mu sync.Mutex
 		var handled []*engine.Msg
 		h1 := engine.HandlerFunc(func(msg *engine.Msg) {
@@ -130,7 +135,7 @@ func TestOutOfOrderRoundAndBlock(t *testing.T) {
 			defer mu.Unlock()
 			handled = append(handled, msg)
 		})
-		o1 := engine.NewOutOfOrder(h1)
+		o1 := engine.NewOutOfOrder(h1, bc)
 
 		msg2 := &engine.Msg{Block: &onl.Block{Round: 1, Prev: bid1}}
 		o1.Handle(msg2)
@@ -153,8 +158,9 @@ func TestOutOfOrderRoundAndBlock(t *testing.T) {
 }
 
 func TestOutOfOrderConcurrency(t *testing.T) {
+	bc1 := broadcast.NewMem(100)
 	h1 := engine.HandlerFunc(func(msg *engine.Msg) {})
-	o1 := engine.NewOutOfOrder(h1)
+	o1 := engine.NewOutOfOrder(h1, bc1)
 
 	var wg sync.WaitGroup
 	wg.Add(2)

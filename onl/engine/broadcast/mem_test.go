@@ -3,11 +3,11 @@ package broadcast_test
 import (
 	"io"
 	"testing"
+	"time"
 
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
-	"github.com/advanderveer/27067dd17/onl/engine/sync"
 	"github.com/advanderveer/go-test"
 )
 
@@ -37,6 +37,37 @@ func TestBroadcast(t *testing.T) {
 
 	test.Equals(t, msg1, msg2)
 
+	t.Run("with latency", func(t *testing.T) {
+		bc1.WithLatency(time.Millisecond*50, time.Millisecond*100)
+
+		msg3 := &engine.Msg{Block: &onl.Block{Round: 1}}
+		test.Ok(t, bc1.Write(msg3))
+
+		msg4 := &engine.Msg{}
+		t0 := time.Now()
+		test.Ok(t, bc2.Read(msg4))
+
+		test.Assert(t, time.Now().Sub(t0) >= time.Millisecond*50, "latency should be at least 50ms")
+	})
+
+	t.Run("infinite latency, out-of-order ", func(t *testing.T) {
+		bc1.WithLatency(time.Hour, time.Hour*1000) //really long time
+
+		msg5 := &engine.Msg{Block: &onl.Block{Round: 2}}
+		test.Ok(t, bc1.Write(msg5))
+
+		bc1.WithLatency(0, 0)
+
+		msg6 := &engine.Msg{Block: &onl.Block{Round: 3}}
+		test.Ok(t, bc1.Write(msg6))
+
+		msg7 := &engine.Msg{}
+		test.Ok(t, bc2.Read(msg7))
+
+		//msg6 should arrive before msg5
+		test.Equals(t, msg7, msg6)
+	})
+
 	t.Run("close should return EOF", func(t *testing.T) {
 		test.Ok(t, bc2.Close())
 		test.Equals(t, io.EOF, bc2.Read(msg2))
@@ -51,7 +82,7 @@ func TestSyncMessage(t *testing.T) {
 	bc1.To(bc2)
 
 	//bc1 writes sync request to b2
-	msg1 := &engine.Msg{Sync: &sync.Sync{IDs: []onl.ID{bid1}}}
+	msg1 := &engine.Msg{Sync: &engine.Sync{IDs: []onl.ID{bid1}}}
 	test.Ok(t, bc1.Write(msg1))
 
 	//bc2 reads sync request

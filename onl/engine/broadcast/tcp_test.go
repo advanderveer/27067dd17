@@ -9,7 +9,6 @@ import (
 	"github.com/advanderveer/27067dd17/onl"
 	"github.com/advanderveer/27067dd17/onl/engine"
 	"github.com/advanderveer/27067dd17/onl/engine/broadcast"
-	"github.com/advanderveer/27067dd17/onl/engine/sync"
 	"github.com/advanderveer/go-test"
 )
 
@@ -86,7 +85,7 @@ func TestSyncMessageHandling(t *testing.T) {
 	bc1.To(time.Millisecond*10, bc2.Addr())
 
 	//bc1 writes sync request to b2
-	msg1 := &engine.Msg{Sync: &sync.Sync{IDs: []onl.ID{bid1}}}
+	msg1 := &engine.Msg{Sync: &engine.Sync{IDs: []onl.ID{bid1}}}
 	test.Ok(t, bc1.Write(msg1))
 
 	//bc2 reads sync request

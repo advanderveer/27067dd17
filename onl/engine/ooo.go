@@ -20,18 +20,21 @@ func (h HandlerFunc) Handle(msg *Msg) { h(msg) }
 //OutOfOrder allows for calling a handler that handles messages depending on
 //another block to be called later
 type OutOfOrder struct {
-	handler  Handler
+	handler   Handler
+	broadcast BroadcastWriter
+
 	mu       sync.RWMutex
 	onBlocks map[onl.ID][]*Msg
 	onRounds map[uint64][]*Msg
 }
 
 //NewOutOfOrder creates a new OutOfOrder
-func NewOutOfOrder(h Handler) *OutOfOrder {
+func NewOutOfOrder(h Handler, bc BroadcastWriter) *OutOfOrder {
 	return &OutOfOrder{
-		handler:  h,
-		onBlocks: make(map[onl.ID][]*Msg),
-		onRounds: make(map[uint64][]*Msg),
+		broadcast: bc,
+		handler:   h,
+		onBlocks:  make(map[onl.ID][]*Msg),
+		onRounds:  make(map[uint64][]*Msg),
 	}
 }
 
@@ -40,7 +43,26 @@ func (o *OutOfOrder) ResolveRound(nr uint64) {
 	o.mu.Lock()
 	defers, ok := o.onRounds[nr]
 	o.onRounds[nr] = nil
+
+	var syncids []onl.ID
+	for id, msgs := range o.onBlocks {
+		if msgs == nil {
+			continue
+		}
+
+		//upon resolving a round, send out syncs to peers for all blocks
+		//that we're waiting on from previous rounds
+		if id.Round() <= nr {
+			syncids = append(syncids, id)
+		}
+	}
+
 	o.mu.Unlock()
+
+	err := o.broadcast.Write(&Msg{Sync: &Sync{IDs: syncids}})
+	if err != nil {
+		//@TODO handle
+	}
 
 	if ok {
 		for _, msg := range defers {

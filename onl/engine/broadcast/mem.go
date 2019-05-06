@@ -17,7 +17,7 @@ import (
 type Mem struct {
 	closed bool
 	bufc   chan *mmsg
-	peers  map[*Mem]time.Duration
+	peers  map[*Mem]struct{}
 	mu     sync.RWMutex
 
 	minl time.Duration
@@ -32,7 +32,7 @@ type mmsg struct {
 //NewMem creates an in-memory broadcast endpoint
 func NewMem(bufn int) (m *Mem) {
 	m = &Mem{
-		peers: make(map[*Mem]time.Duration),
+		peers: make(map[*Mem]struct{}),
 		bufc:  make(chan *mmsg, bufn),
 	}
 	return
@@ -41,6 +41,8 @@ func NewMem(bufn int) (m *Mem) {
 //WithLatency will introduce a random latency to each peers that is added
 //after this method is called
 func (bc *Mem) WithLatency(min, max time.Duration) {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
 	bc.minl = min
 	bc.maxl = max
 }
@@ -58,7 +60,7 @@ func (bc *Mem) To(peers ...*Mem) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	for _, p := range peers {
-		bc.peers[p] = bc.latency()
+		bc.peers[p] = struct{}{}
 	}
 }
 
@@ -103,8 +105,8 @@ func (bc *Mem) Write(msg *engine.Msg) (err error) {
 
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
-	for peer, latency := range bc.peers {
-		go peerWrite(bc, peer, buf.Bytes(), latency)
+	for peer := range bc.peers {
+		go peerWrite(bc, peer, buf.Bytes(), bc.latency())
 	}
 
 	return

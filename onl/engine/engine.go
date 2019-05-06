@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/advanderveer/27067dd17/onl"
-	"github.com/advanderveer/27067dd17/onl/engine/sync"
 )
 
 //Clock provides an interface for synchronized rounds and reasonably accurate timestamps
@@ -50,7 +49,7 @@ func New(logw io.Writer, bc Broadcast, clock Clock, idn *onl.Identity, c *onl.Ch
 	e.genesis = e.chain.Genesis().Hash()
 
 	//setup out of order buffer, genesis is always marked as resolved
-	e.ooo = NewOutOfOrder(e)
+	e.ooo = NewOutOfOrder(e, bc)
 	e.ooo.Resolve(e.genesis)
 
 	//round progress
@@ -138,14 +137,14 @@ func (e *Engine) Handle(msg *Msg) {
 	} else if msg.Block != nil {
 		e.handleBlock(msg.Block)
 	} else if msg.Sync != nil {
-		e.handleSyncRequest(msg.Sync)
+		e.handleSync(msg.Sync)
 	} else {
 		e.logs.Printf("[INFO][%s] read messages that is neither a write or a block, ignoring", e.idn)
 		return
 	}
 }
 
-func (e *Engine) handleSyncRequest(s *sync.Sync) {
+func (e *Engine) handleSync(s *Sync) {
 	for _, id := range s.IDs {
 		b, _, _, err := e.chain.Read(id)
 		if err != nil {

@@ -237,6 +237,13 @@ condition trasnsactions? https://github.com/perlin-network/life
  - Ethereums Merkle Patricia Trie used for this: https://github.com/ethereum/wiki/wiki/Patricia-Tree
  - IOTAL local snapshots: https://blog.iota.org/coming-up-local-snapshots-7018ff0ed5db
 
+## Part 5 - Security and Optimizations
+
+- how do we validate the blocks early, prevent spam etc
+- how do we prevent sync's too often (maybe broadcast is still delivering)?
+- how do we prevent sync's too slow (creating a large backlog of blocks not comming in)
+- prevent engine from relaying block delivered as part of a sync message
+
 
 ##
 ## Plan of Attack:
@@ -282,12 +289,10 @@ condition trasnsactions? https://github.com/perlin-network/life
 # 5. Out Of Order Sync V1
 - [x] Both Mem and TCP broadcast implementations should allow writing back blocks to
   a peer when a sync message is received
-- [ ] When testing the engine it should assert that when connection between two peers
+- [x] When testing the engine it should assert that when connection between two peers
   was broken for a few rounds, after reconnecting the should be able to sync up and
   reach consensus again.
 
-- [ ] Engine minting should find the deposit block for its identity itself, not by
-  hardcoding the genesis
 
 # 6. Failure Mode Testing V1
 - [ ] When the network splits exactly in half both sides shouldn't be able to
@@ -317,7 +322,9 @@ condition trasnsactions? https://github.com/perlin-network/life
 - [ ] Each token must surpass a threshold that is calculated by looking at the
   average token difficulty of the last N blocks of the chain.
 - [ ] Proposers are automatically removed if they fail to propose a block to the
-  network, adjusted for the VRF threshold
+  network, adjusted for the VRF threshold  
+- [ ] Engine minting should find the deposit block for its identity itself, not by
+  hardcoding the genesis
 
 - [ ] The algorithm can adjust or be configured to work in high-latency (WAN)
    and low latency (LAN) scenarios by changing the round time.
