@@ -20,12 +20,17 @@
 
 ### R&D Questions
 - RQ1: How do deposit transactions look like, how to securely time limit them?
+    - Idea 1: A transaction to of which the output can only be spend after a certain
+      amount of blocks. This height difference must be larger then the time that
+      deposit transactions can be used for minting blocks. _But can we used this
+      to slice the user if proof of malpractice is provided?_ in that case it will
+      be (partially) spendable by some-one else before it unlocks
 - RQ2: Does walking back for total stake work in practice?
 - RQ3: How quickly can be expect finalization, if at all?
 - RQ4: How does the round-time adjustment take place? Can it be attacked?
 
 ### Engineering Questions
-- Just one PK, simplicity is king -> Signature is VRF, is ID
+- [x] Just one PK, simplicity is king -> Signature is VRF, is ID
 - Block syncing with peers needs to be more efficiency
 
 ### Attacks
@@ -39,8 +44,8 @@
 
 ### TODO
 
-- [ ] try a VRF based signature on the transaction. What is the overhead?
-- [ ] create a signature that creates and validates a deposit transaction
+- [x] try a VRF based signature on the transaction.
+- [x] create a signature that creates and validates a deposit transaction
 - [ ] create a simulation that tests finalisation and total stake calculations
 - [ ] write down a round time adjustment protocol
 

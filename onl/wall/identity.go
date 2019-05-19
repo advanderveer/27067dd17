@@ -63,7 +63,8 @@ func (idn *Identity) SignTransfer(tr *Tr) *Tr {
 	tr.Proof = [vrf.ProofSize]byte{}
 
 	//create a verifiable random id from the transfer's content
-	id, proof := vrf.Prove(tr.Hash().Bytes(), idn.sk)
+	h := tr.Hash()
+	id, proof := vrf.Prove(h[:], idn.sk)
 
 	//copy the verfiably random id and the proof of it
 	copy(tr.ID[:], id)
