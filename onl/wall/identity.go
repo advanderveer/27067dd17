@@ -51,8 +51,38 @@ func (idn *Identity) PublicKey() (pk PK) {
 	return
 }
 
-// SignTransfer will sign the transfer with the identities signing key and set
-// the sender to this identity.
+// SignBlock will sign the block as this identity as the voter
+func (idn *Identity) SignBlock(b *Block, prevt [vrf.Size]byte) *Block {
+	b.Vote.Voter = idn.PublicKey()
+
+	//generate ticket
+	token, tproof := vrf.Prove(prevt[:], idn.sk)
+	copy(b.Ticket.Token[:], token)
+	copy(b.Ticket.Proof[:], tproof)
+
+	//sign the vote separately
+	vh := b.Vote.Hash()
+	b.Vote.Signature = [vrf.Size]byte{}
+	b.Vote.Proof = [vrf.ProofSize]byte{}
+	vsig, vproof := vrf.Prove(vh[:], idn.sk)
+	copy(b.Vote.Signature[:], vsig)
+	copy(b.Vote.Proof[:], vproof)
+
+	//empty the existing signature elements before hashing
+	b.ID = [vrf.Size]byte{}
+	b.Proof = [vrf.ProofSize]byte{}
+
+	// hash the whole block
+	h := b.Hash()
+	id, proof := vrf.Prove(h[:], idn.sk)
+
+	// copy block level signature elements
+	copy(b.ID[:], id)
+	copy(b.Proof[:], proof)
+	return b
+}
+
+// SignTransfer will sign the transfer with this identity as the sender
 func (idn *Identity) SignTransfer(tr *Tr) *Tr {
 
 	//set the sender to this identity

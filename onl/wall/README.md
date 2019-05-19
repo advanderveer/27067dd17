@@ -1,8 +1,9 @@
 
 ### V2 Design
-- There is a special staking address.
-- Before proposing blocks a transfer has to be made to this address.
-- This transfer is referenced in a block proposal as stake.
+- Identities can create time locked 'deposit' transfers to themselves
+- Before proposing blocks such a deposit transfer needs be accepted
+- The deposit must be locked sufficiently far into the future.
+- This deposit is referenced in a block proposal as stake.
 - The deposit transfer can only be used for a certain amount of time.
 - After that time a new deposit transaction needs to be made.
 - After even more time the first deposit can be reclaimed.
@@ -45,7 +46,11 @@
 ### TODO
 
 - [x] try a VRF based signature on the transaction.
-- [x] create a signature that creates and validates a deposit transaction
+- [x] implement creation and validates of a deposit transaction
+- [x] create a block data structure that can be created and verified
+- [ ] create a block structure that correctly uses the threshold function
+- [ ] create a chain structure that appends verified blocks and determines new tips
+- [ ] create a chain structure that uses witnesses to update the weight and finalization
 - [ ] create a simulation that tests finalisation and total stake calculations
 - [ ] write down a round time adjustment protocol
 

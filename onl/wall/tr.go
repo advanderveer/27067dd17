@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"fmt"
 
 	"github.com/advanderveer/27067dd17/vrf"
 )
@@ -12,10 +11,25 @@ import (
 // TrID is the transfer ID
 type TrID [vrf.Size]byte
 
-// TrIn describes the inputs to a transfer
-type TrIn struct {
-	OutputTr  TrID   //transfer that holds the output we consume
-	OutputIdx uint64 //the index of the output in the transfer
+// OID uniquely references a transfer output
+type OID [vrf.Size + 8]byte
+
+// Tr returns the transaction this output is held in
+func (r OID) Tr() (id TrID) {
+	copy(id[:], r[:32])
+	return
+}
+
+// Idx returns the output index the output is at
+func (r OID) Idx() (i uint64) {
+	return binary.BigEndian.Uint64(r[32:])
+}
+
+//Ref returns a new output reference
+func Ref(trid TrID, i uint64) (ref OID) {
+	copy(ref[:], trid[:])
+	binary.BigEndian.PutUint64(ref[32:], i)
+	return
 }
 
 // TrOut describes the outputs to a transfer
@@ -28,7 +42,7 @@ type TrOut struct {
 // Tr is a (currency) transfer, the same as a bitcoin transaction but this
 // term is so overloaded in our case that it is given a different name
 type Tr struct {
-	Inputs  []TrIn  //references to outputs the sender owns
+	Inputs  []OID   //references to outputs the sender owns
 	Outputs []TrOut //amounts send to receivers
 
 	// Sender signs off on the fact that this transfer consumes the referenced
@@ -45,10 +59,7 @@ func (tr *Tr) Hash() (h [32]byte) {
 	var fields [][]byte
 
 	for _, in := range tr.Inputs {
-		fields = append(fields, in.OutputTr[:])
-		idx := make([]byte, 8)
-		binary.BigEndian.PutUint64(idx, in.OutputIdx)
-		fields = append(fields, idx)
+		fields = append(fields, in[:])
 	}
 
 	for _, out := range tr.Outputs {
@@ -66,9 +77,9 @@ func (tr *Tr) Hash() (h [32]byte) {
 }
 
 // Verify a transfer considering the current state of the tip it will be minted
-// against. It take sits main inspiration from the rules as set forth by Bitcoin
+// against. It take its main inspiration from the rules as set forth by Bitcoin
 // as specified here: https://en.bitcoin.it/wiki/Protocol_rules#.22tx.22_messages
-func (tr *Tr) Verify(coinbase bool, s State) (ok bool, err error) {
+func (tr *Tr) Verify(coinbase bool, round uint64, utro *UTRO) (ok bool, err error) {
 	if len(tr.Outputs) < 1 {
 		return false, ErrTransferEmpty
 	}
@@ -100,34 +111,23 @@ func (tr *Tr) Verify(coinbase bool, s State) (ok bool, err error) {
 	for _, in := range tr.Inputs {
 
 		//read the transfer that is supposed to hold the funds for this input
-		refTr, err := s.ReadTr(in.OutputTr)
-		if err != nil {
-			return false, fmt.Errorf("failed to read the referenced transfer: %v", err)
-		}
-
-		//read the specific output
-		idx := int(in.OutputIdx)
-		if len(refTr.Outputs) < (idx + 1) {
-			return false, fmt.Errorf("referenced transfer didn't have enough outputs")
+		out, ok := utro.Get(in)
+		if !ok {
+			return false, ErrTransferUsesUnspendableOutput
 		}
 
 		//check that the sender is the owner of the used funds
-		if refTr.Outputs[idx].Receiver != tr.Sender {
+		if out.Receiver != tr.Sender {
 			return false, ErrTransferSenderNotFundsOwner
-		}
-
-		//check if the output hasn't been spend already
-		if s.HasBeenSpend(in.OutputTr, in.OutputIdx) {
-			return false, ErrTansferDoubleSpends
 		}
 
 		//check if the round in which this input gets encoded is
 		//larger then the minimum round the output unlocks
-		if s.CurrRound() <= refTr.Outputs[idx].UnlocksAfter {
+		if round <= out.UnlocksAfter {
 			return false, ErrTransferTimeLockedOutput
 		}
 
-		inTotal += refTr.Outputs[idx].Amount
+		inTotal += out.Amount
 	}
 
 	var outTotal uint64
