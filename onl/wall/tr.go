@@ -6,11 +6,11 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/advanderveer/27067dd17/vrf/ed25519"
+	"github.com/advanderveer/27067dd17/vrf"
 )
 
 // TrID is the transfer ID
-type TrID [32]byte
+type TrID [vrf.Size]byte
 
 // Bytes returns the id as a byte slice
 func (id TrID) Bytes() []byte { return id[:] }
@@ -24,7 +24,7 @@ type TrIn struct {
 // TrOut describes the outputs to a transfer
 type TrOut struct {
 	Amount   uint64 //amount we're transferring
-	Receiver SignPK //the receiver of this amount
+	Receiver PK     //the receiver of this amount
 }
 
 // Tr is a (currency) transfer, the same as a bitcoin transaction but this
@@ -35,8 +35,11 @@ type Tr struct {
 
 	// Sender signs off on the fact that this transfer consumes the referenced
 	// output and the mising of the amount into the outputs for the receivers.
-	Sender    SignPK
-	Signature [64]byte
+	// The ID is verfiably unique and based on the transfer content so acts as
+	// both a signature and an ID
+	Sender PK
+	Proof  [vrf.ProofSize]byte
+	ID     TrID
 }
 
 // Hash the transfer
@@ -58,7 +61,8 @@ func (tr *Tr) Hash() (id TrID) {
 	}
 
 	fields = append(fields, tr.Sender[:])
-	fields = append(fields, tr.Signature[:])
+	fields = append(fields, tr.ID[:])
+	fields = append(fields, tr.Proof[:])
 
 	return TrID(sha256.Sum256(bytes.Join(fields, nil)))
 }
@@ -78,19 +82,21 @@ func (tr *Tr) Verify(coinbase bool, trr TrReader) (ok bool, err error) {
 		return false, ErrTransferEmpty
 	}
 
-	//the signature was made from hasing without the signature
-	sig := tr.Signature
-	tr.Signature = [64]byte{}
+	//empty the elements that represent the signature
+	sig := tr.ID
+	proof := tr.Proof
+	tr.ID = [vrf.Size]byte{}
+	tr.Proof = [vrf.ProofSize]byte{}
 
 	//verify the signature
-	pk := [32]byte(tr.Sender)
-	ok = ed25519.Verify(&pk, tr.Hash().Bytes(), &sig)
+	ok = vrf.Verify(tr.Sender[:], tr.Hash().Bytes(), sig[:], proof[:])
 	if !ok {
-		return false, ErrTransferSignatureInvalid
+		return false, ErrTransferIDInvalid
 	}
 
-	//reset the signature
-	tr.Signature = sig
+	//reset the signature elements
+	tr.ID = sig
+	tr.Proof = proof
 
 	//the sum of the outputs must be equal to the sum of the inputs
 	var inTotal uint64

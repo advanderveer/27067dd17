@@ -1,4 +1,53 @@
 
+### V2 Design
+- There is a special staking address.
+- Before proposing blocks a transfer has to be made to this address.
+- This transfer is referenced in a block proposal as stake.
+- The deposit transfer can only be used for a certain amount of time.
+- After that time a new deposit transaction needs to be made.
+- After even more time the first deposit can be reclaimed.
+- It uses the Ouroboras Genesis threshold function
+- All usable recent deposits are summed to determine the total stake.
+- Blocks are proposed for a certain round.
+- Only the first block from each identity is accepted in a round.
+- We take the DFINITY longest chain rule
+- Each block come with the blocks that lived in the round next to the prev
+- The stake and time for these blocks are also encoded in the longest chain
+- Stake from the new block and its witnesses flow through the ancestory
+- If all stake at an ancestory has been accounted for it can be finalized
+- A finalized block acts as a checkpoint that new members can bootstrap from
+- The timestamps in witnesses and blocks can provide a dynamic round time
+
+### R&D Questions
+- RQ1: How do deposit transactions look like, how to securely time limit them?
+- RQ2: Does walking back for total stake work in practice?
+- RQ3: How quickly can be expect finalization, if at all?
+- RQ4: How does the round-time adjustment take place? Can it be attacked?
+
+### Engineering Questions
+- Just one PK, simplicity is king -> Signature is VRF, is ID
+- Block syncing with peers needs to be more efficiency
+
+### Attacks
+- Nothing at stake/Double voting - Not possible in this system.
+- Long range - Witness weight and finalization
+- VRF key grinding - VRF randomness is purely based on the prev block, if
+  a pk would be grinded it couldn't be used because it requires at least one
+  block to deposit the stake that is necessary.
+- Stake grinding - VRF token has no free parameters, it is purely based on
+  the prev block's token
+
+### TODO
+
+- [ ] try a VRF based signature on the transaction. What is the overhead?
+- [ ] create a signature that creates and validates a deposit transaction
+- [ ] create a simulation that tests finalisation and total stake calculations
+- [ ] write down a round time adjustment protocol
+
+
+####
+### Old Brainstorm Below
+####  
 
 PoW has three properties
 - It takes time:    Every block height stays open for certain amount of time  
@@ -10,7 +59,6 @@ With the collects we can encode info about:
   round time.
 - the nr of bets that were high enough to pass the threshold and adjust the
   threshold over time.
-
 
 # V1 Problems:
 There are a few problems with the first implementation:

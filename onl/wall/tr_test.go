@@ -12,29 +12,31 @@ func TestTransferHashing(t *testing.T) {
 
 		//add each field and check that the hash changes
 		tr := Tr{}
-		test.Equals(t, "2ea9ab9198", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
-		tr.Signature[0] = 0x01
-		test.Equals(t, "932f773767", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "b393978842", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		tr.ID[0] = 0x01
+		test.Equals(t, "07810c11b9", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		tr.Proof[0] = 0x01
+		test.Equals(t, "f769f5a2c6", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Sender[0] = 0x01
-		test.Equals(t, "26ce35972c", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "712974f9b3", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Inputs = append(tr.Inputs, TrIn{})
-		test.Equals(t, "ca22c15233", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "4d09841576", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Inputs[0].OutputIdx = 1
-		test.Equals(t, "4846aee817", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "45f65f3253", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Inputs[0].OutputTr[0] = 0x01
-		test.Equals(t, "8c2270ea3a", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "b0d831bef1", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Outputs = append(tr.Outputs, TrOut{})
-		test.Equals(t, "5d8ce67cc5", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "cd90559b8f", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Outputs[0].Amount = 1
-		test.Equals(t, "778f411320", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "11d1108b25", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Outputs[0].Receiver[0] = 0x01
-		test.Equals(t, "75d44a4119", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "b1b2e0aecb", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 
 		//add extra inputs for testing consistency of the hashing
 		tr.Inputs = append(tr.Inputs, TrIn{})
-		test.Equals(t, "0f091da2d8", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "a5f4410a6e", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 		tr.Outputs = append(tr.Outputs, TrOut{})
-		test.Equals(t, "3909f0d0a9", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
+		test.Equals(t, "b8ddca1046", fmt.Sprintf("%.5x", tr.Hash().Bytes()))
 	}
 }
 
@@ -43,18 +45,21 @@ func TestTransferSigning(t *testing.T) {
 	//unsigned transaction
 	tr0 := &Tr{}
 	test.Equals(t, "0000000000", fmt.Sprintf("%.5x", tr0.Sender.Bytes()))
-	test.Equals(t, "0000000000", fmt.Sprintf("%.5x", tr0.Signature[:]))
+	test.Equals(t, "0000000000", fmt.Sprintf("%.5x", tr0.ID[:]))
+	test.Equals(t, "0000000000", fmt.Sprintf("%.5x", tr0.Proof[:]))
 
 	id1 := NewIdentity([]byte{0x01})
 	tr1 := id1.SignTransfer(&Tr{})
-	test.Equals(t, "cecc1507dc", fmt.Sprintf("%.5x", tr1.Sender.Bytes()))
-	test.Equals(t, "0e42d11968", fmt.Sprintf("%.5x", tr1.Signature[:]))
+	test.Equals(t, "4762ad6415", fmt.Sprintf("%.5x", tr1.Sender.Bytes()))
+	test.Equals(t, "30d0f4340f", fmt.Sprintf("%.5x", tr1.ID[:]))
+	test.Equals(t, "043d044565", fmt.Sprintf("%.5x", tr1.Proof[:]))
 
 	//signing with a different identity should yield other values
 	id2 := NewIdentity([]byte{0x02})
 	tr2 := id2.SignTransfer(tr1)
-	test.Equals(t, "6b79c57e6a", fmt.Sprintf("%.5x", tr2.Sender.Bytes()))
-	test.Equals(t, "15650fa5ee", fmt.Sprintf("%.5x", tr2.Signature[:]))
+	test.Equals(t, "3a5a0c2134", fmt.Sprintf("%.5x", tr2.Sender.Bytes()))
+	test.Equals(t, "f1aae682c9", fmt.Sprintf("%.5x", tr2.ID[:]))
+	test.Equals(t, "42a7f18888", fmt.Sprintf("%.5x", tr2.Proof[:]))
 
 	//resigning with the first identity should yield exactly the same
 	id3 := NewIdentity([]byte{0x01})
@@ -96,7 +101,7 @@ func TestTransferVerification(t *testing.T) {
 
 	tr0 := id2.SignTransfer(&Tr{
 		Outputs: []TrOut{
-			{Amount: 100, Receiver: id1.SignPK()},
+			{Amount: 100, Receiver: id1.PublicKey()},
 		},
 	})
 
@@ -105,9 +110,9 @@ func TestTransferVerification(t *testing.T) {
 			{OutputTr: tr0.Hash(), OutputIdx: 0},
 		},
 		Outputs: []TrOut{
-			{Amount: 50, Receiver: id1.SignPK()},
-			{Amount: 20, Receiver: id1.SignPK()},
-			{Amount: 30, Receiver: id2.SignPK()},
+			{Amount: 50, Receiver: id1.PublicKey()},
+			{Amount: 20, Receiver: id1.PublicKey()},
+			{Amount: 30, Receiver: id2.PublicKey()},
 		},
 	})
 
@@ -118,8 +123,8 @@ func TestTransferVerification(t *testing.T) {
 			{OutputTr: tr1.Hash(), OutputIdx: 1},
 		},
 		Outputs: []TrOut{
-			{Amount: 35, Receiver: id1.SignPK()},
-			{Amount: 35, Receiver: id2.SignPK()},
+			{Amount: 35, Receiver: id1.PublicKey()},
+			{Amount: 35, Receiver: id2.PublicKey()},
 		},
 	})
 
@@ -130,7 +135,7 @@ func TestTransferVerification(t *testing.T) {
 			{OutputTr: tr1.Hash(), OutputIdx: 1},
 		},
 		Outputs: []TrOut{
-			{Amount: 35, Receiver: id1.SignPK()},
+			{Amount: 35, Receiver: id1.PublicKey()},
 		},
 	})
 
@@ -156,10 +161,20 @@ func TestTransferVerification(t *testing.T) {
 		t.Run("invalid signature", func(t *testing.T) {
 			tr4 := &Tr{Inputs: []TrIn{{}}, Outputs: []TrOut{{}}}
 			tr4 = id1.SignTransfer(tr4)
-			tr4.Signature[0] = 0x01
+			tr4.ID[0] = 0x01
 
 			ok, err := tr4.Verify(false, trr)
-			test.Equals(t, ErrTransferSignatureInvalid, err)
+			test.Equals(t, ErrTransferIDInvalid, err)
+			test.Equals(t, false, ok)
+		})
+
+		t.Run("invalid proof", func(t *testing.T) {
+			tr5 := &Tr{Inputs: []TrIn{{}}, Outputs: []TrOut{{}}}
+			tr5 = id1.SignTransfer(tr5)
+			tr5.Proof[0] = 0x01
+
+			ok, err := tr5.Verify(false, trr)
+			test.Equals(t, ErrTransferIDInvalid, err)
 			test.Equals(t, false, ok)
 		})
 	})

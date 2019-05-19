@@ -7,26 +7,20 @@ import (
 	"sync"
 
 	"github.com/advanderveer/27067dd17/vrf"
-	"github.com/advanderveer/27067dd17/vrf/ed25519"
 )
 
-//SignPK is the signing public key
-type SignPK [32]byte
+//PK is the public key we use for an identity
+type PK [vrf.PublicKeySize]byte
 
 //Bytes returns a byte slice of the signing pk
-func (pk SignPK) Bytes() []byte { return pk[:] }
-
-//RandPK is the verfiable randomness public key
-type RandPK [32]byte
+func (pk PK) Bytes() []byte { return pk[:] }
 
 //Identity represents is an unique Sybil in network
 type Identity struct {
-	mu     sync.RWMutex
-	name   string
-	vrfPK  []byte
-	vrfSK  *[vrf.SecretKeySize]byte
-	signPK *[ed25519.PublicKeySize]byte
-	signSK *[ed25519.PrivateKeySize]byte
+	mu   sync.RWMutex
+	name string
+	pk   []byte
+	sk   *[vrf.SecretKeySize]byte
 }
 
 //NewIdentity will start a new identity from the provided identity bytes, if nil
@@ -43,22 +37,17 @@ func NewIdentity(rndid []byte) (idn *Identity) {
 		rndr = bytes.NewReader(rb)
 	}
 
-	idn.vrfPK, idn.vrfSK, err = vrf.GenerateKey(rndr)
+	idn.pk, idn.sk, err = vrf.GenerateKey(rndr)
 	if err != nil {
 		panic("failed to generate vrf keys for injector: " + err.Error())
-	}
-
-	idn.signPK, idn.signSK, err = ed25519.GenerateKey(rndr)
-	if err != nil {
-		panic("failed to generate sign keys for injector: " + err.Error())
 	}
 
 	return
 }
 
-// SignPK returns the public key used for signing
-func (idn *Identity) SignPK() (pk SignPK) {
-	copy(pk[:], idn.signPK[:])
+// PublicKey returns the public key used by this identity
+func (idn *Identity) PublicKey() (pk PK) {
+	copy(pk[:], idn.pk[:])
 	return
 }
 
@@ -67,13 +56,18 @@ func (idn *Identity) SignPK() (pk SignPK) {
 func (idn *Identity) SignTransfer(tr *Tr) *Tr {
 
 	//set the sender to this identity
-	tr.Sender = idn.SignPK()
+	tr.Sender = idn.PublicKey()
 
-	//empty the existing signature before hashing
-	tr.Signature = [64]byte{}
+	//empty the existing signature elements before hashing
+	tr.ID = [vrf.Size]byte{}
+	tr.Proof = [vrf.ProofSize]byte{}
 
-	//finally, sign the transfer
-	tr.Signature = *(ed25519.Sign(idn.signSK, tr.Hash().Bytes()))
+	//create a verifiable random id from the transfer's content
+	id, proof := vrf.Prove(tr.Hash().Bytes(), idn.sk)
+
+	//copy the verfiably random id and the proof of it
+	copy(tr.ID[:], id)
+	copy(tr.Proof[:], proof)
 	return tr
 }
 
@@ -92,5 +86,5 @@ func (idn *Identity) String() string {
 		return idn.name
 	}
 
-	return fmt.Sprintf("%.4x", *idn.signPK)
+	return fmt.Sprintf("%.4x", idn.pk)
 }
