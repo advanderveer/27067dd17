@@ -32,11 +32,17 @@ func Uint64n(n uint64, rnd *rand.Rand) uint64 {
 
 //Dist returns a random distribution of the total stake over the provided nr of
 //members.
-func Dist(n int, stake uint64, rnd *rand.Rand) (dist []uint64) {
+func Dist(n int, stake, part uint64, rnd *rand.Rand) (dist []uint64) {
 	dist = make([]uint64, n)
 
 	if n < 1 {
 		return //zero length dist asked
+	}
+
+	if part > 1 {
+		stake = stake / part //part can specify to only hand out some of the total stake
+	} else if part == 0 {
+		stake = 0 //part 0 means no stake used
 	}
 
 	step := stake / uint64(n)

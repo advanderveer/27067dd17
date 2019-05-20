@@ -17,19 +17,19 @@ func TestRandomUint64(t *testing.T) {
 func TestMaxUint64RandomDist(t *testing.T) {
 
 	//distribute over 1 member
-	d1 := Dist(1, math.MaxUint64, rand.New(rand.NewSource(1)))
+	d1 := Dist(1, math.MaxUint64, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, 1, len(d1))
 	test.Equals(t, uint64(math.MaxUint64), d1[0])
 
 	//distribute over 2 members
-	d2 := Dist(2, math.MaxUint64, rand.New(rand.NewSource(1)))
+	d2 := Dist(2, math.MaxUint64, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, 2, len(d2))
 	test.Equals(t, uint64(5416370213103200912), d2[0])
 	test.Equals(t, uint64(13030373860606350703), d2[1])
 	test.Equals(t, uint64(math.MaxUint64), d2[0]+d2[1])
 
 	//distribute over many members
-	d3 := Dist(1e6, math.MaxUint64, rand.New(rand.NewSource(1)))
+	d3 := Dist(1e6, math.MaxUint64, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, int(1e6), len(d3))
 
 	//analyze distribution
@@ -53,9 +53,9 @@ func TestMaxUint64RandomDist(t *testing.T) {
 }
 
 func TestZeroDist(t *testing.T) {
-	test.Equals(t, 0, len(Dist(0, math.MaxUint64, rand.New(rand.NewSource(1)))))
+	test.Equals(t, 0, len(Dist(0, math.MaxUint64, 1, rand.New(rand.NewSource(1)))))
 
-	d1 := Dist(2, 0, rand.New(rand.NewSource(1)))
+	d1 := Dist(2, 0, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, 2, len(d1))
 	test.Equals(t, uint64(0), d1[0])
 	test.Equals(t, uint64(0), d1[0])
@@ -64,18 +64,18 @@ func TestZeroDist(t *testing.T) {
 func TestLowNrRandomDist(t *testing.T) {
 
 	//the one member should get the one stake
-	d1 := Dist(1, 1, rand.New(rand.NewSource(1)))
+	d1 := Dist(1, 1, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, 1, len(d1))
 	test.Equals(t, uint64(1), d1[0])
 
 	//not enough stake for both, should hand out to one
-	d2 := Dist(2, 1, rand.New(rand.NewSource(1)))
+	d2 := Dist(2, 1, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, 2, len(d2))
 	test.Equals(t, uint64(0), d2[0])
 	test.Equals(t, uint64(1), d2[1])
 
 	//spase distribution should still work
-	d3 := Dist(1e5, 100, rand.New(rand.NewSource(1)))
+	d3 := Dist(1e5, 100, 1, rand.New(rand.NewSource(1)))
 	test.Equals(t, int(1e5), len(d3))
 	var total uint64
 	for _, stake := range d3 {
@@ -83,4 +83,14 @@ func TestLowNrRandomDist(t *testing.T) {
 	}
 
 	test.Equals(t, uint64(100), total)
+
+	//spase distribution when part of stake is used
+	d4 := Dist(1e5, 100, 2, rand.New(rand.NewSource(1)))
+	test.Equals(t, int(1e5), len(d4))
+	total = 0
+	for _, stake := range d4 {
+		total += stake
+	}
+
+	test.Equals(t, uint64(50), total)
 }
