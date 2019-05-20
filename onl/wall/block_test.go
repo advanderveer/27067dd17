@@ -1,11 +1,14 @@
 package wall
 
 import (
+	"crypto/rand"
 	"fmt"
 	"testing"
 
 	"github.com/advanderveer/27067dd17/vrf"
 	"github.com/advanderveer/go-test"
+	"github.com/cockroachdb/apd"
+	"github.com/pkg/errors"
 )
 
 func TestVoteHashing(t *testing.T) {
@@ -56,7 +59,7 @@ func TestBlockSigning(t *testing.T) {
 	test.Equals(t, "0000000000", fmt.Sprintf("%.5x", b0.ID[:]))
 	test.Equals(t, "0000000000", fmt.Sprintf("%.5x", b0.Proof[:]))
 
-	id1 := NewIdentity([]byte{0x01})
+	id1 := NewIdentity([]byte{0x01}, rand.Reader)
 
 	for i := 0; i < 10; i++ {
 		b1 := id1.SignBlock(&Block{}, [vrf.Size]byte{})
@@ -71,7 +74,7 @@ func TestBlockSigning(t *testing.T) {
 }
 
 func TestVoteVerification(t *testing.T) {
-	b := NewIdentity([]byte{0x01}).SignBlock(&Block{}, [vrf.Size]byte{})
+	b := NewIdentity([]byte{0x01}, rand.Reader).SignBlock(&Block{}, [vrf.Size]byte{})
 	test.Equals(t, "3eaffa8e4f", fmt.Sprintf("%.5x", b.Vote.Signature[:]))
 	test.Equals(t, "c011b985e8", fmt.Sprintf("%.5x", b.Vote.Proof[:]))
 
@@ -86,7 +89,7 @@ func TestVoteVerification(t *testing.T) {
 }
 
 func TestBlockIDVerification(t *testing.T) {
-	b := NewIdentity([]byte{0x01}).SignBlock(&Block{}, [vrf.Size]byte{})
+	b := NewIdentity([]byte{0x01}, rand.Reader).SignBlock(&Block{}, [vrf.Size]byte{})
 	test.Equals(t, "8aa0c60737", fmt.Sprintf("%.5x", b.ID[:]))
 	test.Equals(t, "9faf6eaaa0", fmt.Sprintf("%.5x", b.Proof[:]))
 
@@ -101,90 +104,149 @@ func TestBlockIDVerification(t *testing.T) {
 }
 
 func TestBlockVerification(t *testing.T) {
-	idn := NewIdentity([]byte{0x01})
+	params := DefaultParams()
+
+	idn := NewIdentity([]byte{0x01}, rand.Reader)
 	prevv := &Vote{}          //imaginary previous round block's vote
 	prevt := [vrf.Size]byte{} //imaginary previous round block's ticket
-	utro := NewUTRO()
-	utro.Put(OID{}, TrOut{UnlocksAfter: 10, Receiver: idn.PublicKey()})
-
 	b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
-	ok, err := b.Verify(prevv, prevt, utro)
+
+	bw := idn.SignBlock(&Block{Vote: Vote{Timestamp: 100, Round: 100}}, prevt)
+
+	utro := NewUTRO()
+	utro.Put(OID{}, TrOut{Amount: 100, UnlocksAfter: 10, Receiver: idn.PublicKey(), IsDeposit: true})
+
+	ok, err := b.Verify(prevv, prevt, utro, params)
 	test.Ok(t, err)
 	test.Equals(t, true, ok)
+
+	t.Run("threshold not reached", func(t *testing.T) {
+		params2 := DefaultParams()
+		params2.RoundCoefficient = apd.New(1, -3) //lower the chance of passing threshold
+
+		ok, err = b.Verify(prevv, prevt, utro, params2)
+		test.Equals(t, ErrBlocksTicketNotGoodEnough, err)
+		test.Equals(t, false, ok)
+	})
 
 	// invalid vote
 	b = idn.SignBlock(&Block{}, prevt)
 	b.Vote.Proof[0] = 0x01
-	ok, err = b.Verify(prevv, prevt, utro)
+	ok, err = b.Verify(prevv, prevt, utro, params)
 	test.Equals(t, ErrBlockVoteSignatureInvalid, err)
 	test.Equals(t, false, ok)
 
 	// invalid id
 	b = idn.SignBlock(&Block{}, prevt)
 	b.Proof[0] = 0x01
-	ok, err = b.Verify(prevv, prevt, utro)
+	ok, err = b.Verify(prevv, prevt, utro, params)
 	test.Equals(t, ErrBlockIDInvalid, err)
 	test.Equals(t, false, ok)
 
 	// invalid ticket
 	b = idn.SignBlock(&Block{}, prevt)
 	b.Ticket.Token[0] = 0x01
-	ok, err = b.Verify(prevv, prevt, utro)
+	ok, err = b.Verify(prevv, prevt, utro, params)
 	test.Equals(t, ErrBlockTicketInvalid, err)
 	test.Equals(t, false, ok)
 
 	// invalid witness
 	b = idn.SignBlock(
 		&Block{Witness: []*Vote{{}}}, prevt)
-	b.Witness[0].Round = 1
-	ok, err = b.Verify(prevv, prevt, utro)
+	ok, err = b.Verify(prevv, prevt, utro, params)
 	test.Equals(t, ErrWitnessSignatureInvalid, err)
 	test.Equals(t, false, ok)
 
+	t.Run("witness in wrong round", func(t *testing.T) {
+		b1 := idn.SignBlock(
+			&Block{Vote: Vote{Timestamp: 1, Round: 2}, Witness: []*Vote{&bw.Vote}}, prevt)
+
+		ok, err = b1.Verify(prevv, prevt, utro, params)
+		test.Equals(t, ErrWitnessInvalidRound, err)
+		test.Equals(t, false, ok)
+	})
+
 	t.Run("timestamp in past", func(t *testing.T) {
-		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 0}}, prevt)
-		ok, err := b.Verify(prevv, prevt, utro)
+		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 0, Round: 1}}, prevt)
+		ok, err := b.Verify(prevv, prevt, utro, params)
 		test.Equals(t, ErrBlockTimstampInPast, err)
 		test.Equals(t, false, ok)
 	})
 
 	t.Run("round in the past", func(t *testing.T) {
 		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 0}}, prevt)
-		ok, err := b.Verify(prevv, prevt, utro)
+		ok, err := b.Verify(prevv, prevt, utro, params)
 		test.Equals(t, ErrBlockRoundInPast, err)
 		test.Equals(t, false, ok)
 	})
 
 	t.Run("deposit not Owned", func(t *testing.T) {
-		utro.Put(OID{}, TrOut{})
-		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 0}}, prevt)
-		ok, err := b.Verify(prevv, prevt, utro)
+		utro.Put(OID{}, TrOut{IsDeposit: true, UnlocksAfter: 2})
+		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
+		ok, err := b.Verify(prevv, prevt, utro, params)
 		test.Equals(t, ErrBlockVoterDoesntOwnDeposit, err)
 		test.Equals(t, false, ok)
 	})
 
 	t.Run("deposit must be locked", func(t *testing.T) {
-		utro.Put(OID{}, TrOut{Receiver: idn.PublicKey(), UnlocksAfter: 0})
+		utro.Put(OID{}, TrOut{Receiver: idn.PublicKey(), UnlocksAfter: 0, IsDeposit: true})
 		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
-		ok, err := b.Verify(prevv, prevt, utro)
+		ok, err := b.Verify(prevv, prevt, utro, params)
 		test.Equals(t, ErrBlockDepositNotLocked, err)
 		test.Equals(t, false, ok)
 	})
 
 	t.Run("deposit must be locked", func(t *testing.T) {
+		utro.Put(OID{}, TrOut{Receiver: idn.PublicKey(), UnlocksAfter: 1000, IsDeposit: true})
+		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
+		ok, err := b.Verify(prevv, prevt, utro, params)
+		test.Equals(t, ErrBlockDepositLockedTooLong, err)
+		test.Equals(t, false, ok)
+	})
+
+	t.Run("deposit must be marked", func(t *testing.T) {
 		utro.Put(OID{}, TrOut{Receiver: idn.PublicKey(), UnlocksAfter: 1000})
 		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
-		ok, err := b.Verify(prevv, prevt, utro)
-		test.Equals(t, ErrBlockDepositLockedTooLong, err)
+		ok, err := b.Verify(prevv, prevt, utro, params)
+		test.Equals(t, ErrBlockDepositNotMarkedAsDeposit, err)
 		test.Equals(t, false, ok)
 	})
 
 	t.Run("deposit not spendable", func(t *testing.T) {
 		utro.Del(OID{})
-		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 0}}, prevt)
-		ok, err := b.Verify(prevv, prevt, utro)
+		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
+		ok, err := b.Verify(prevv, prevt, utro, params)
 		test.Equals(t, ErrBlockDepositNotSpendable, err)
 		test.Equals(t, false, ok)
 	})
 
+	t.Run("zero spendable deposit", func(t *testing.T) {
+		utro.Put(OID{}, TrOut{Amount: 0, UnlocksAfter: 10, Receiver: idn.PublicKey(), IsDeposit: true})
+		b := idn.SignBlock(&Block{Vote: Vote{Timestamp: 1, Round: 1}}, prevt)
+		ok, err := b.Verify(prevv, prevt, utro, params)
+		test.Equals(t, ErrNoSpendableDepositAvailable, err)
+		test.Equals(t, false, ok)
+	})
+
+	t.Run("invalid transaction", func(t *testing.T) {
+		utro.Put(OID{}, TrOut{Amount: 100, UnlocksAfter: 10, Receiver: idn.PublicKey(), IsDeposit: true})
+		b := &Block{Vote: Vote{Timestamp: 1, Round: 1}}
+		b.Transfers = append(b.Transfers, &Tr{})
+
+		b = idn.SignBlock(b, prevt)
+		ok, err := b.Verify(prevv, prevt, utro, params)
+		test.Equals(t, ErrTransferEmpty, errors.Cause(err))
+		test.Equals(t, false, ok)
+	})
+
+	t.Run("witness timestamp", func(t *testing.T) {
+		b1 := idn.SignBlock(
+			&Block{Vote: Vote{Timestamp: 1, Round: 101}, Witness: []*Vote{&bw.Vote}}, prevt)
+
+		prevv.Round = 100
+
+		ok, err = b1.Verify(prevv, prevt, utro, params)
+		test.Equals(t, ErrWitnessTimestampNotInPast, err)
+		test.Equals(t, false, ok)
+	})
 }

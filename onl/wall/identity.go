@@ -2,8 +2,8 @@ package wall
 
 import (
 	"bytes"
-	"crypto/rand"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/advanderveer/27067dd17/vrf"
@@ -25,11 +25,10 @@ type Identity struct {
 
 //NewIdentity will start a new identity from the provided identity bytes, if nil
 //random bytes are used
-func NewIdentity(rndid []byte) (idn *Identity) {
+func NewIdentity(rndid []byte, rndr io.Reader) (idn *Identity) {
 	idn = &Identity{}
 
 	var err error
-	rndr := rand.Reader
 	if rndid != nil {
 		rb := make([]byte, 64)
 		copy(rb, rndid)

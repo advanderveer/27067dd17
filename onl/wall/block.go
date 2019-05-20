@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 
+	"github.com/advanderveer/27067dd17/onl/thr"
 	"github.com/advanderveer/27067dd17/vrf"
 	"github.com/pkg/errors"
 )
@@ -132,10 +133,10 @@ func (b *Block) verifyTicket(prevt [vrf.Size]byte) (ok bool) {
 	return
 }
 
-// Verify the block considering the current state at the tip it was minted
-// against. It takes inspiration from the Bitcoin protocol rules:
+// Verify the block considering the current unspend transfer outputs at the tip
+// it was minted against. It takes inspiration from the Bitcoin protocol rules:
 // https://en.bitcoin.it/wiki/Protocol_rules#.22block.22_messages
-func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO) (ok bool, err error) {
+func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO, p *Params) (ok bool, err error) {
 	if !b.Vote.Verify() {
 		return false, ErrBlockVoteSignatureInvalid
 	}
@@ -148,23 +149,44 @@ func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO) (ok bool, 
 		if !w.Verify() {
 			return false, ErrWitnessSignatureInvalid
 		}
+
+		//the witness round must always equal the prev's block round
+		if w.Round != prevv.Round {
+			return false, ErrWitnessInvalidRound
+		}
+
+		//the witness timestamp must be before this blocks creation timestamp
+		if w.Timestamp >= b.Vote.Timestamp {
+			return false, ErrWitnessTimestampNotInPast
+		}
 	}
 
 	if !b.verifyBlockID() {
 		return false, ErrBlockIDInvalid
 	}
 
+	//make sure the round nr makes sense
+	if b.Vote.Round <= prevv.Round {
+		return false, ErrBlockRoundInPast
+	}
+
+	//verify transfers
 	for _, tr := range b.Transfers {
-		ok, err := tr.Verify(false, b.Vote.Round, utro)
+		ok, err := tr.Verify(false, b.Vote.Round, utro, p.MaxDepositTTL)
 		if !ok {
-			return false, errors.Wrap(err, "failed to verify transaction")
+			return false, errors.Wrap(err, "failed to verify transfer")
 		}
 	}
 
-	//deposit must be spendable
+	//deposit must be a spendable output
 	deposit, ok := utro.Get(b.Vote.Deposit)
 	if !ok {
 		return false, ErrBlockDepositNotSpendable
+	}
+
+	// check if the deposit is usable for the block's round
+	if ok, err := deposit.UsableDepositFor(b.Vote.Round, p.MaxDepositTTL); !ok {
+		return false, err
 	}
 
 	//the deposit must be owned by the voter
@@ -172,27 +194,21 @@ func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO) (ok bool, 
 		return false, ErrBlockVoterDoesntOwnDeposit
 	}
 
-	//the deposit must still be time locked
-	if deposit.UnlocksAfter < b.Vote.Round {
-		return false, ErrBlockDepositNotLocked
+	//read the total amount of deposited stake
+	total := utro.Deposited(b.Vote.Round, p.MaxDepositTTL)
+	if total < 1 {
+		return false, ErrNoSpendableDepositAvailable
 	}
 
-	//the deposit must still be locked, but not too far into the future
-	if (deposit.UnlocksAfter - b.Vote.Round) > 100 {
-		return false, ErrBlockDepositLockedTooLong
+	//check if the drawn ticket passes the threshold
+	_, _, ok = thr.Thr(p.DecimalContext, p.RoundCoefficient, deposit.Amount, total, b.Ticket.Token[:])
+	if !ok {
+		return false, ErrBlocksTicketNotGoodEnough
 	}
-
-	// @TODO get thet total deposit from utro set
-	// @TODO validate that the ticket token is passed the threshold
 
 	//make sure the timestamp makes sense
 	if b.Vote.Timestamp <= prevv.Timestamp {
 		return false, ErrBlockTimstampInPast
-	}
-
-	//make sure round makes sense
-	if b.Vote.Round <= prevv.Round {
-		return false, ErrBlockRoundInPast
 	}
 
 	return true, nil

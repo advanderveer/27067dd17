@@ -1,6 +1,8 @@
 package wall
 
-import "sync"
+import (
+	"sync"
+)
 
 //UTRO holds unspend transfer outputs, similar to Bitcoin UTXO. It does however
 //also keep time locked outputs.
@@ -12,6 +14,22 @@ type UTRO struct {
 //NewUTRO initiates an utro set
 func NewUTRO() *UTRO {
 	return &UTRO{outputs: make(map[OID]*TrOut)}
+}
+
+// Deposited returns the total amount of spendable deposit for the current round
+func (utro *UTRO) Deposited(round, depositTTL uint64) (total uint64) {
+	utro.mu.RLock()
+	defer utro.mu.RUnlock()
+
+	for _, out := range utro.outputs {
+		if ok, _ := out.UsableDepositFor(round, depositTTL); !ok {
+			continue
+		}
+
+		total += out.Amount
+	}
+
+	return
 }
 
 //Put (over)writes an output to the utro set

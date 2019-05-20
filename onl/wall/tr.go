@@ -36,7 +36,31 @@ func Ref(trid TrID, i uint64) (ref OID) {
 type TrOut struct {
 	Amount       uint64 //amount we're transferring
 	Receiver     PK     //the receiver of this amount
+	IsDeposit    bool   //is set to true if the output is a deposit
 	UnlocksAfter uint64 //the round after which the funds in this output unlock
+}
+
+// UsableDepositFor returns whether this output represents a usable deposit for
+// the provided round number.
+func (tro TrOut) UsableDepositFor(round uint64, depositTTL uint64) (ok bool, err error) {
+
+	//check if the output is marked as a deposit
+	if !tro.IsDeposit {
+		return false, ErrBlockDepositNotMarkedAsDeposit
+	}
+
+	//the deposit must still be time locked
+	if tro.UnlocksAfter <= round {
+		return false, ErrBlockDepositNotLocked
+	}
+
+	//the deposit must still be locked but not passed the deposit ttl
+	remainingLockTime := tro.UnlocksAfter - round
+	if remainingLockTime > depositTTL {
+		return false, ErrBlockDepositLockedTooLong
+	}
+
+	return true, nil
 }
 
 // Tr is a (currency) transfer, the same as a bitcoin transaction but this
@@ -54,6 +78,32 @@ type Tr struct {
 	ID     TrID
 }
 
+// NewTr initates an empty unsigned transfer
+func NewTr() *Tr {
+	return &Tr{}
+}
+
+// Consume will add an input of which the funds can be used to send to a receiver
+func (tr *Tr) Consume(intr *Tr, ii uint64) *Tr {
+	tr.Inputs = append(tr.Inputs, Ref(intr.ID, ii))
+	return tr
+}
+
+// Send will add an output that will send an amount of the consumed inputs
+func (tr *Tr) Send(amount uint64, to *Identity, unlocksAfter uint64, deposit bool) *Tr {
+	tr.Outputs = append(tr.Outputs, TrOut{
+		Amount:       amount,
+		Receiver:     to.PublicKey(),
+		IsDeposit:    deposit,
+		UnlocksAfter: unlocksAfter})
+	return tr
+}
+
+// Sign is a convenient builder method for singing a transfer
+func (tr *Tr) Sign(sender *Identity) *Tr {
+	return sender.SignTransfer(tr)
+}
+
 // Hash the transfer
 func (tr *Tr) Hash() (h [32]byte) {
 	var fields [][]byte
@@ -67,6 +117,10 @@ func (tr *Tr) Hash() (h [32]byte) {
 		amount := make([]byte, 8)
 		binary.BigEndian.PutUint64(amount, out.Amount)
 		fields = append(fields, amount)
+
+		if out.IsDeposit {
+			fields = append(fields, []byte{0x01})
+		}
 	}
 
 	fields = append(fields, tr.Sender[:])
@@ -79,7 +133,7 @@ func (tr *Tr) Hash() (h [32]byte) {
 // Verify a transfer considering the current state of the tip it will be minted
 // against. It take its main inspiration from the rules as set forth by Bitcoin
 // as specified here: https://en.bitcoin.it/wiki/Protocol_rules#.22tx.22_messages
-func (tr *Tr) Verify(coinbase bool, round uint64, utro *UTRO) (ok bool, err error) {
+func (tr *Tr) Verify(coinbase bool, round uint64, utro *UTRO, depositTTL uint64) (ok bool, err error) {
 	if len(tr.Outputs) < 1 {
 		return false, ErrTransferEmpty
 	}
@@ -132,6 +186,16 @@ func (tr *Tr) Verify(coinbase bool, round uint64, utro *UTRO) (ok bool, err erro
 
 	var outTotal uint64
 	for _, out := range tr.Outputs {
+
+		//if the output is a deposit, its locked time cannot be higher then the max ttl
+		remainingLockTime := out.UnlocksAfter - round
+		if out.IsDeposit && remainingLockTime > depositTTL {
+
+			//@TODO check that the receiver is sender for a deposit?
+
+			return false, ErrTransferDepositLockedTooLong
+		}
+
 		outTotal += out.Amount
 	}
 
