@@ -173,7 +173,7 @@ func TestBlockMinting(t *testing.T) {
 	t.Run("panic on witness corruption", func(t *testing.T) {
 		defer func() {
 			if r := recover(); r == nil {
-				t.Errorf("should panic on failure to read random bytes")
+				t.Errorf("should panic")
 			}
 
 			c.rounds[0] = c.rounds[0][:0]
@@ -312,4 +312,61 @@ func TestMintAndAppend(t *testing.T) {
 	//which should append succesfully
 	err = c.Append(signed())
 	test.Ok(t, err)
+}
+
+func TestLongestChain(t *testing.T) {
+	idn1 := wall.NewIdentity([]byte{0x01}, rand.Reader)
+	idn2 := wall.NewIdentity([]byte{0x02}, rand.Reader)
+	p := wall.DefaultParams()
+
+	c := NewMemChain(p)
+	prev, _ := c.Read(c.Tip())
+	b1 := idn1.SignBlock(&wall.Block{Vote: wall.Vote{Prev: c.Tip(), Round: 1, Timestamp: 1}}, prev.Ticket.Token)
+	c.writeBlock(b1)
+
+	b2 := idn2.SignBlock(&wall.Block{Vote: wall.Vote{Prev: b1.ID, Round: 3, Timestamp: 1}}, prev.Ticket.Token)
+	c.writeBlock(b2)
+	b3 := idn1.SignBlock(&wall.Block{Vote: wall.Vote{Prev: b1.ID, Round: 3, Timestamp: 2}}, prev.Ticket.Token)
+	c.writeBlock(b3)
+
+	test.Equals(t, b2.ID, c.rounds[3][0])
+	test.Equals(t, b3.ID, c.rounds[3][1])
+
+	c.selectLongestChain(0)
+
+	//should have re-sorted blocks in the round
+	test.Equals(t, b2.ID, c.rounds[3][1])
+	test.Equals(t, b3.ID, c.rounds[3][0])
+
+	// weight should match what was expected
+	test.Assert(t, c.weights[b3.ID] > c.weights[b2.ID], "b3 should weigh more")
+	test.Equals(t, p.WeightPoints*3, c.weights[b3.ID])                    //rank 1 on all three rounds
+	test.Equals(t, (p.WeightPoints*2)+p.WeightPoints/2, c.weights[b2.ID]) //ranks second on round 3
+
+	// block three should now be tip
+	test.Equals(t, b3.ID, c.Tip())
+
+	t.Run("panic on round block not existing", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("should panic")
+			}
+
+			c.blocks[b2.ID] = b2
+		}()
+
+		delete(c.blocks, b2.ID)
+		c.selectLongestChain(0)
+	})
+
+	t.Run("panic on block weight not existing", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("should panic")
+			}
+		}()
+
+		delete(c.weights, c.Genesis())
+		c.selectLongestChain(1)
+	})
 }

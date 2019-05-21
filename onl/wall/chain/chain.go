@@ -1,8 +1,10 @@
 package chain
 
 import (
+	"sort"
 	"sync"
 
+	"github.com/advanderveer/27067dd17/onl/thr"
 	"github.com/advanderveer/27067dd17/onl/wall"
 	"github.com/advanderveer/27067dd17/vrf"
 	"github.com/pkg/errors"
@@ -23,20 +25,23 @@ type MemChain struct {
 	params  *wall.Params
 
 	//mutable state
-	tip    wall.BID
-	rounds map[uint64][]wall.BID
-	idns   map[uint64]map[wall.PK]struct{}
-	blocks map[wall.BID]*wall.Block
-	mu     sync.RWMutex
+	tip     wall.BID
+	rounds  map[uint64][]wall.BID
+	maxr    uint64
+	idns    map[uint64]map[wall.PK]struct{}
+	blocks  map[wall.BID]*wall.Block
+	weights map[wall.BID]uint64
+	mu      sync.RWMutex
 }
 
 //NewMemChain creates an in-memory block chain
 func NewMemChain(p *wall.Params) (c *MemChain) {
 	c = &MemChain{
-		params: p,
-		blocks: make(map[wall.BID]*wall.Block),
-		rounds: make(map[uint64][]wall.BID),
-		idns:   make(map[uint64]map[wall.PK]struct{}),
+		params:  p,
+		blocks:  make(map[wall.BID]*wall.Block),
+		rounds:  make(map[uint64][]wall.BID),
+		idns:    make(map[uint64]map[wall.PK]struct{}),
+		weights: make(map[wall.BID]uint64),
 	}
 
 	//create a genesis block, signed by set of well-known non-random keys
@@ -45,6 +50,8 @@ func NewMemChain(p *wall.Params) (c *MemChain) {
 	c.blocks[gen.ID] = gen
 	c.rounds[0] = []wall.BID{gen.ID}
 	c.tip = gen.ID
+	c.weights[gen.ID] = c.params.WeightPoints
+	c.weights[gen.Vote.Prev] = 0
 
 	return
 }
@@ -202,14 +209,67 @@ func (c *MemChain) Append(b *wall.Block) (err error) {
 	// finally, write the block to our chain
 	c.writeBlock(b)
 
+	// re-select the longest chain
+	c.selectLongestChain(b.Vote.Round)
+
 	// @TODO walk back into the chain and update stake shares for finalization
-	// @TODO can finalization walkback be combined with utro indexing
-	// @TODO walk forward over the rounds to update ranking for consensus
-	// @TODO update the tip if a new longest chain was found
 	return
 }
 
 // private functionality
+
+func (c *MemChain) selectLongestChain(n uint64) {
+	tipw := c.weights[c.tip]
+
+	for rn := n; rn <= c.maxr; rn++ {
+		round := c.rounds[rn]
+		if round == nil {
+			continue //no such round
+		}
+
+		//sort by decimal representation of the ticket's token
+		sort.Slice(round, func(i, j int) bool {
+			ib := c.blocks[round[i]]
+			jb := c.blocks[round[j]]
+			if jb == nil || ib == nil {
+				panic("chain: missing block for round sorting")
+			}
+
+			it := thr.Dec(c.params.DecimalContext, ib.Ticket.Token[:])
+			jt := thr.Dec(c.params.DecimalContext, jb.Ticket.Token[:])
+
+			return it.Cmp(jt) > 0
+		})
+
+		//assign each block in the round a weight based on its sorted position
+		for i, bid := range round {
+			b := c.blocks[bid] //missing blocks will panic on sort
+
+			// weight is determined by the ranking in the round
+			w := c.params.WeightPoints / uint64(i+1)
+			prevw, ok := c.weights[b.Vote.Prev]
+			if !ok {
+				panic("chain: missing weight for tip selection")
+			}
+
+			// sum weight is the previous weight plus its own weight
+			sumw := prevw + w
+			c.weights[bid] = sumw
+
+			//if sum-weight heigher or equal the the current tip sum-weight use that
+			//as the new tip. By also replacing on equal we prefer newly calculated
+			//weights over the old maximum
+			if sumw >= tipw {
+				c.tip = bid
+				tipw = c.weights[c.tip]
+			}
+		}
+	}
+}
+
+func (c *MemChain) ancenstoryFinalization() {
+
+}
 
 func (c *MemChain) indexUTRO(id wall.BID) (utro *wall.UTRO) {
 	utro = wall.NewUTRO()
@@ -238,21 +298,6 @@ func (c *MemChain) indexUTRO(id wall.BID) (utro *wall.UTRO) {
 	})
 
 	return
-}
-
-func (c *MemChain) writeBlock(b *wall.Block) {
-	c.blocks[b.ID] = b
-	round, _ := c.rounds[b.Vote.Round]
-	round = append(round, b.ID)
-	c.rounds[b.Vote.Round] = round
-
-	indround, _ := c.idns[b.Vote.Round]
-	if indround == nil {
-		indround = make(map[wall.PK]struct{})
-	}
-
-	indround[b.Vote.Voter] = struct{}{}
-	c.idns[b.Vote.Round] = indround
 }
 
 func (c *MemChain) findDeposit(bid wall.BID, round uint64, idn *wall.Identity) (dtr *wall.Tr, outi uint64) {
@@ -287,4 +332,24 @@ func (c *MemChain) findDeposit(bid wall.BID, round uint64, idn *wall.Identity) (
 	})
 
 	return
+}
+
+func (c *MemChain) writeBlock(b *wall.Block) {
+	c.blocks[b.ID] = b
+	c.weights[b.ID] = 0
+
+	round, _ := c.rounds[b.Vote.Round]
+	round = append(round, b.ID)
+	c.rounds[b.Vote.Round] = round
+
+	indround, _ := c.idns[b.Vote.Round]
+	if indround == nil {
+		indround = make(map[wall.PK]struct{})
+		if b.Vote.Round > c.maxr {
+			c.maxr = b.Vote.Round
+		}
+	}
+
+	indround[b.Vote.Voter] = struct{}{}
+	c.idns[b.Vote.Round] = indround
 }
