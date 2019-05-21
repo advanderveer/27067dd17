@@ -207,5 +207,29 @@ func TestBlockMinting(t *testing.T) {
 		test.Equals(t, wb.Vote.Signature, b.Witness[0].Signature)
 		test.Equals(t, "ef677ae374", fmt.Sprintf("%.5x", b.ID))
 	}
+}
+
+func TestUTROIndexing(t *testing.T) {
+	idn := wall.NewIdentity([]byte{0x01}, rand.Reader)
+	p := wall.DefaultParams()
+	c := NewMemChain(p)
+
+	tr1 := wall.NewTr().Send(100, idn, 0, false).Sign(idn)
+	tr2 := wall.NewTr().Consume(tr1, 0).Send(100, idn, 0, false).Sign(idn)
+
+	c.blocks[c.Genesis()].Transfers = []*wall.Tr{tr1, tr2}
+
+	utro, err := c.indexUTRO(c.Tip())
+	test.Ok(t, err)
+
+	_, ok := utro.Get(wall.Ref(tr1.ID, 0))
+	test.Equals(t, false, ok) //should not be spendable
+	_, ok = utro.Get(wall.Ref(tr2.ID, 0))
+	test.Equals(t, true, ok) //should be spendable
+
+	t.Run("non existing", func(t *testing.T) {
+		_, err := c.indexUTRO(wall.BID{})
+		test.Equals(t, ErrBlockNotExist, errors.Cause(err))
+	})
 
 }

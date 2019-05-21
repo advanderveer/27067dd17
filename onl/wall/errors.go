@@ -13,6 +13,7 @@ var (
 	ErrBlockIDInvalid                 = errors.New("block id was invalid")
 	ErrBlockVoteSignatureInvalid      = errors.New("the block's vote signature was invalid")
 	ErrBlockTicketInvalid             = errors.New("the block ticket is invalid")
+	ErrBlockRoundIsZero               = errors.New("bock's round is zero")
 	ErrWitnessSignatureInvalid        = errors.New("witness signature is invalid")
 	ErrWitnessInvalidRound            = errors.New("witness in wrong round")
 	ErrWitnessTimestampNotInPast      = errors.New("witness timestamp must be in the past")
@@ -25,4 +26,5 @@ var (
 	ErrBlockDepositNotMarkedAsDeposit = errors.New("block's stake deposit not marked as deposit")
 	ErrNoSpendableDepositAvailable    = errors.New("no-one placed any spendable deposit")
 	ErrBlocksTicketNotGoodEnough      = errors.New("blocks' ticket doesn't suffice for threshold")
+	ErrWitnessWasPrevBlock            = errors.New("prev block cannot be added a witness")
 )

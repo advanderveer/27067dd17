@@ -19,12 +19,15 @@ func GenesisBlock(t [vrf.Size]byte, god *wall.Identity) (b *wall.Block) {
 
 //MemChain implements a blockchain that lives purely in memory
 type MemChain struct {
-	tip     wall.BID
 	genesis wall.BID
 	params  *wall.Params
-	rounds  map[uint64][]wall.BID
-	blocks  map[wall.BID]*wall.Block
-	mu      sync.RWMutex
+
+	//mutable state
+	tip    wall.BID
+	rounds map[uint64][]wall.BID
+	idns   map[uint64]map[wall.PK]struct{}
+	blocks map[wall.BID]*wall.Block
+	mu     sync.RWMutex
 }
 
 //NewMemChain creates an in-memory block chain
@@ -33,6 +36,7 @@ func NewMemChain(p *wall.Params) (c *MemChain) {
 		params: p,
 		blocks: make(map[wall.BID]*wall.Block),
 		rounds: make(map[uint64][]wall.BID),
+		idns:   make(map[uint64]map[wall.PK]struct{}),
 	}
 
 	//create a genesis block, signed by set of well-known non-random keys
@@ -155,31 +159,105 @@ func (c *MemChain) read(id wall.BID) (b *wall.Block, err error) {
 	return b, nil
 }
 
-// func (c *MemChain) Append(b *wall.Block) (err error) {
-//
-// 	// allow only one block per identity per round
-// 	// given the blocks prev, walk and create utro set
-// 	// verify the block and if valid, add to our set
-// 	// walk back into the chain and update stake shares for finalization
-// 	// walk forward over the rounds to update ranking for consensus
-// 	// update the tip if a new longest chain was found
-//
-// 	// RQ1: Figure out how the finalization behaviour looks like
-// 	// RQ2: If it looks good, can we make append constant time from
-// 	//      with midway snapshots?
-// 	// RQ3: Is the in-memory approach reliable enough, can it continue
-// 	//      midway if it crashed
-//
-// 	return
-// }
+// Append a block to the chain
+func (c *MemChain) Append(b *wall.Block) (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// cheap verification steps
+	if ok, err := b.VerifyCheap(); !ok {
+		return errors.Wrap(err, "failed to verify cheap fields")
+	}
+
+	// the block itself must not exit
+	existing, _ := c.read(b.ID)
+	if existing != nil {
+		return ErrBlockExists
+	}
+
+	// the previous block must exist
+	prevb, err := c.read(b.Vote.Prev)
+	if err != nil {
+		return errors.Wrap(err, "failed to read prev block")
+	}
+
+	// verification based on prev block
+	if ok, err := b.VerifyAgainstPrev(&prevb.Vote, prevb.Ticket.Token); !ok {
+		return errors.Wrap(err, "failed to verify against prev")
+	}
+
+	// each voter is only allowed one vote per round
+	if _, ok := c.idns[b.Vote.Round][b.Vote.Voter]; ok {
+		return ErrVoterAlreadyVoted
+	}
+
+	// index the unspent transfers to verify the block
+	utro, err := c.indexUTRO(b.Vote.Prev)
+	if err != nil {
+		return errors.Wrap(err, "failed to index unspend transfers")
+	}
+
+	// verify the remainder of the block
+	if ok, err := b.VerifyAgainstUTRO(utro, c.params); !ok {
+		return errors.Wrap(err, "failed to verify against utro")
+	}
+
+	// finally, write the block to our chain
+	c.writeBlock(b)
+
+	// @TODO walk back into the chain and update stake shares for finalization
+	// @TODO can finalization walkback be combined with utro indexing
+	// @TODO walk forward over the rounds to update ranking for consensus
+	// @TODO update the tip if a new longest chain was found
+	return
+}
 
 // private functionality
+
+func (c *MemChain) indexUTRO(id wall.BID) (utro *wall.UTRO, err error) {
+	utro = wall.NewUTRO()
+	spent := map[wall.OID]struct{}{}
+	if err = c.walk(id, func(b *wall.Block) (err error) {
+		for i := len(b.Transfers) - 1; i >= 0; i-- {
+			tr := b.Transfers[i]
+
+			//keep a map of all spent inputs
+			for _, in := range tr.Inputs {
+				spent[in] = struct{}{}
+			}
+
+			//any output that is not in that map can be considered unspent
+			for oi, out := range tr.Outputs {
+				oid := wall.Ref(tr.ID, uint64(oi))
+				if _, ok := spent[oid]; ok {
+					continue //output is spent
+				}
+
+				utro.Put(oid, out)
+			}
+		}
+
+		return
+	}); err != nil {
+		return nil, err
+	}
+
+	return
+}
 
 func (c *MemChain) writeBlock(b *wall.Block) {
 	c.blocks[b.ID] = b
 	round, _ := c.rounds[b.Vote.Round]
 	round = append(round, b.ID)
 	c.rounds[b.Vote.Round] = round
+
+	indround, _ := c.idns[b.Vote.Round]
+	if indround == nil {
+		indround = make(map[wall.PK]struct{})
+	}
+
+	indround[b.Vote.Voter] = struct{}{}
+	c.idns[b.Vote.Round] = indround
 }
 
 func (c *MemChain) findDeposit(bid wall.BID, round uint64, idn *wall.Identity) (dtr *wall.Tr, outi uint64) {

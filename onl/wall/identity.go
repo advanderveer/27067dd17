@@ -50,22 +50,28 @@ func (idn *Identity) PublicKey() (pk PK) {
 	return
 }
 
-// SignBlock will sign the block as this identity as the voter
-func (idn *Identity) SignBlock(b *Block, prevt [vrf.Size]byte) *Block {
-	b.Vote.Voter = idn.PublicKey()
-
-	//generate ticket
+func (idn *Identity) drawTicket(b *Block, prevt [vrf.Size]byte) {
 	token, tproof := vrf.Prove(prevt[:], idn.sk)
 	copy(b.Ticket.Token[:], token)
 	copy(b.Ticket.Proof[:], tproof)
+}
 
-	//sign the vote separately
+func (idn *Identity) signVote(b *Block) {
 	vh := b.Vote.Hash()
 	b.Vote.Signature = [vrf.Size]byte{}
 	b.Vote.Proof = [vrf.ProofSize]byte{}
 	vsig, vproof := vrf.Prove(vh[:], idn.sk)
 	copy(b.Vote.Signature[:], vsig)
 	copy(b.Vote.Proof[:], vproof)
+}
+
+// SignBlock will sign the block as this identity as the voter
+func (idn *Identity) SignBlock(b *Block, prevt [vrf.Size]byte) *Block {
+	b.Vote.Voter = idn.PublicKey()
+
+	//ticket and vote
+	idn.drawTicket(b, prevt)
+	idn.signVote(b)
 
 	//empty the existing signature elements before hashing
 	b.ID = [vrf.Size]byte{}

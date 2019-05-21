@@ -7,11 +7,13 @@ import (
 
 	"github.com/advanderveer/27067dd17/onl/thr"
 	"github.com/advanderveer/27067dd17/vrf"
-	"github.com/pkg/errors"
 )
 
 // BID is the ID of a block
 type BID [vrf.Size]byte
+
+//NilBID is a zero value block ID
+var NilBID = BID{}
 
 // Vote encodes the voting aspect of a block proposal
 type Vote struct {
@@ -133,18 +135,45 @@ func (b *Block) verifyTicket(prevt [vrf.Size]byte) (ok bool) {
 	return
 }
 
-// Verify the block considering the current unspend transfer outputs at the tip
-// it was minted against. It takes inspiration from the Bitcoin protocol rules:
+// VerifyCheap is the verification of fields that are not dependant on the current
+// system state can can be done quickly and cheaply. It takes inspiration from the Bitcoin protocol rules:
 // https://en.bitcoin.it/wiki/Protocol_rules#.22block.22_messages
-func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO, p *Params) (ok bool, err error) {
+func (b *Block) VerifyCheap() (ok bool, err error) {
+	if !b.verifyBlockID() {
+		return false, ErrBlockIDInvalid
+	}
+
 	if !b.Vote.Verify() {
 		return false, ErrBlockVoteSignatureInvalid
 	}
 
+	//round must be at least one
+	if b.Vote.Round < 1 {
+		return false, ErrBlockRoundIsZero
+	}
+
+	return true, nil
+}
+
+// VerifyAgainstPrev are semi-cheap verification steps that only require the previous
+// block to be loaded from the state. It takes inspiration from the Bitcoin protocol rules:
+// https://en.bitcoin.it/wiki/Protocol_rules#.22block.22_messages
+func (b *Block) VerifyAgainstPrev(prevv *Vote, prevt [vrf.Size]byte) (ok bool, err error) {
 	if !b.verifyTicket(prevt) {
 		return false, ErrBlockTicketInvalid
 	}
 
+	// round nr must make sense
+	if b.Vote.Round <= prevv.Round {
+		return false, ErrBlockRoundInPast
+	}
+
+	// make sure the timestamp makes sense
+	if b.Vote.Timestamp <= prevv.Timestamp {
+		return false, ErrBlockTimstampInPast
+	}
+
+	// verify witnesses next the prev block
 	for _, w := range b.Witness {
 		if !w.Verify() {
 			return false, ErrWitnessSignatureInvalid
@@ -159,24 +188,19 @@ func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO, p *Params)
 		if w.Timestamp >= b.Vote.Timestamp {
 			return false, ErrWitnessTimestampNotInPast
 		}
-	}
 
-	if !b.verifyBlockID() {
-		return false, ErrBlockIDInvalid
-	}
-
-	//make sure the round nr makes sense
-	if b.Vote.Round <= prevv.Round {
-		return false, ErrBlockRoundInPast
-	}
-
-	//verify transfers
-	for _, tr := range b.Transfers {
-		ok, err := tr.Verify(false, b.Vote.Round, utro, p.MaxDepositTTL)
-		if !ok {
-			return false, errors.Wrap(err, "failed to verify transfer")
+		if w.Signature == prevv.Signature {
+			return false, ErrWitnessWasPrevBlock
 		}
 	}
+
+	return true, nil
+}
+
+// VerifyAgainstUTRO are the verification steps that require a fully loaded
+// index of unspend transfer outputs.  It takes inspiration from the Bitcoin protocol rules:
+// https://en.bitcoin.it/wiki/Protocol_rules#.22block.22_messages
+func (b *Block) VerifyAgainstUTRO(utro *UTRO, p *Params) (ok bool, err error) {
 
 	//deposit must be a spendable output
 	deposit, ok := utro.Get(b.Vote.Deposit)
@@ -206,9 +230,12 @@ func (b *Block) Verify(prevv *Vote, prevt [vrf.Size]byte, utro *UTRO, p *Params)
 		return false, ErrBlocksTicketNotGoodEnough
 	}
 
-	//make sure the timestamp makes sense
-	if b.Vote.Timestamp <= prevv.Timestamp {
-		return false, ErrBlockTimstampInPast
+	//verify transfers
+	for _, tr := range b.Transfers {
+		ok, err := tr.Verify(false, b.Vote.Round, utro, p.MaxDepositTTL)
+		if !ok {
+			return false, err
+		}
 	}
 
 	return true, nil
