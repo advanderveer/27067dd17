@@ -57,7 +57,7 @@ func (c *MemChain) Genesis() wall.BID { return c.genesis }
 
 // Mint a block that will extend the chain from the provided prev, it returns a
 // block that can be further modified before calling the signf to finalize it.
-func (c *MemChain) Mint(prev wall.BID, round, ts uint64, idn *wall.Identity) (b *wall.Block, signf func(), err error) {
+func (c *MemChain) Mint(prev wall.BID, round, ts uint64, idn *wall.Identity) (b *wall.Block, signf func() *wall.Block, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -105,8 +105,8 @@ func (c *MemChain) Mint(prev wall.BID, round, ts uint64, idn *wall.Identity) (b 
 		}
 	}
 
-	return b, func() {
-		idn.SignBlock(b, prevb.Ticket.Token)
+	return b, func() *wall.Block {
+		return idn.SignBlock(b, prevb.Ticket.Token)
 	}, nil
 }
 
@@ -164,12 +164,12 @@ func (c *MemChain) Append(b *wall.Block) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// cheap verification steps
+	// cheap verification step
 	if ok, err := b.VerifyCheap(); !ok {
 		return errors.Wrap(err, "failed to verify cheap fields")
 	}
 
-	// the block itself must not exit
+	// the block itself must not exist
 	existing, _ := c.read(b.ID)
 	if existing != nil {
 		return ErrBlockExists
@@ -192,10 +192,7 @@ func (c *MemChain) Append(b *wall.Block) (err error) {
 	}
 
 	// index the unspent transfers to verify the block
-	utro, err := c.indexUTRO(b.Vote.Prev)
-	if err != nil {
-		return errors.Wrap(err, "failed to index unspend transfers")
-	}
+	utro := c.indexUTRO(prevb.ID)
 
 	// verify the remainder of the block
 	if ok, err := b.VerifyAgainstUTRO(utro, c.params); !ok {
@@ -214,10 +211,10 @@ func (c *MemChain) Append(b *wall.Block) (err error) {
 
 // private functionality
 
-func (c *MemChain) indexUTRO(id wall.BID) (utro *wall.UTRO, err error) {
+func (c *MemChain) indexUTRO(id wall.BID) (utro *wall.UTRO) {
 	utro = wall.NewUTRO()
 	spent := map[wall.OID]struct{}{}
-	if err = c.walk(id, func(b *wall.Block) (err error) {
+	c.walk(id, func(b *wall.Block) (err error) {
 		for i := len(b.Transfers) - 1; i >= 0; i-- {
 			tr := b.Transfers[i]
 
@@ -238,9 +235,7 @@ func (c *MemChain) indexUTRO(id wall.BID) (utro *wall.UTRO, err error) {
 		}
 
 		return
-	}); err != nil {
-		return nil, err
-	}
+	})
 
 	return
 }

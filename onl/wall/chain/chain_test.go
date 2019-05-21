@@ -3,6 +3,7 @@ package chain
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/advanderveer/27067dd17/onl/wall"
@@ -219,17 +220,96 @@ func TestUTROIndexing(t *testing.T) {
 
 	c.blocks[c.Genesis()].Transfers = []*wall.Tr{tr1, tr2}
 
-	utro, err := c.indexUTRO(c.Tip())
-	test.Ok(t, err)
+	utro := c.indexUTRO(c.Tip())
 
 	_, ok := utro.Get(wall.Ref(tr1.ID, 0))
 	test.Equals(t, false, ok) //should not be spendable
 	_, ok = utro.Get(wall.Ref(tr2.ID, 0))
 	test.Equals(t, true, ok) //should be spendable
+}
 
-	t.Run("non existing", func(t *testing.T) {
-		_, err := c.indexUTRO(wall.BID{})
+func TestBlockAppending(t *testing.T) {
+	idn := wall.NewIdentity([]byte{0x01}, rand.Reader)
+	p := wall.DefaultParams()
+
+	t.Run("cheap verification error", func(t *testing.T) {
+		c := NewMemChain(p)
+		b := idn.SignBlock(&wall.Block{}, [32]byte{})
+		err := c.Append(b)
+		test.Equals(t, wall.ErrBlockRoundIsZero, errors.Cause(err))
+	})
+
+	t.Run("block already exists", func(t *testing.T) {
+		c := NewMemChain(p)
+		b := idn.SignBlock(&wall.Block{Vote: wall.Vote{Round: 1}}, [32]byte{})
+		c.writeBlock(b)
+
+		err := c.Append(b)
+		test.Equals(t, ErrBlockExists, errors.Cause(err))
+	})
+
+	t.Run("prev doesn't exist", func(t *testing.T) {
+		c := NewMemChain(p)
+		b := idn.SignBlock(&wall.Block{Vote: wall.Vote{Round: 1}}, [32]byte{})
+
+		err := c.Append(b)
+		test.Equals(t, true, strings.Contains(err.Error(), "prev"))
 		test.Equals(t, ErrBlockNotExist, errors.Cause(err))
 	})
 
+	t.Run("prev verification", func(t *testing.T) {
+		c := NewMemChain(p)
+		prev, _ := c.Read(c.Tip())
+		b := idn.SignBlock(&wall.Block{Vote: wall.Vote{Prev: c.Tip(), Round: 1}}, prev.Ticket.Token)
+
+		err := c.Append(b)
+		test.Equals(t, wall.ErrBlockTimstampInPast, errors.Cause(err))
+	})
+
+	t.Run("multiple votes", func(t *testing.T) {
+		c := NewMemChain(p)
+		tr1 := wall.NewTr().Send(100, idn, 10, true).Sign(idn)
+		c.blocks[c.Genesis()].Transfers = []*wall.Tr{tr1}
+
+		prev, _ := c.Read(c.Tip())
+		b1 := idn.SignBlock(&wall.Block{Vote: wall.Vote{Deposit: wall.Ref(tr1.ID, 0), Prev: c.Tip(), Round: 1, Timestamp: 1}}, prev.Ticket.Token)
+		b2 := idn.SignBlock(&wall.Block{Vote: wall.Vote{Deposit: wall.Ref(tr1.ID, 0), Prev: c.Tip(), Round: 1, Timestamp: 2}}, prev.Ticket.Token)
+
+		err := c.Append(b1)
+		test.Ok(t, err)
+
+		err = c.Append(b2)
+		test.Equals(t, ErrVoterAlreadyVoted, errors.Cause(err))
+	})
+
+	t.Run("utro verification", func(t *testing.T) {
+		c := NewMemChain(p)
+		tr1 := wall.NewTr().Send(100, idn, 10, true).Sign(idn)
+		tr2 := wall.NewTr().Consume(tr1, 0).Send(100, idn, 0, false).Sign(idn)
+		c.blocks[c.Genesis()].Transfers = []*wall.Tr{tr1, tr2}
+
+		prev, _ := c.Read(c.Tip())
+		b1 := idn.SignBlock(&wall.Block{Vote: wall.Vote{Deposit: wall.Ref(tr1.ID, 0), Prev: c.Tip(), Round: 1, Timestamp: 1}}, prev.Ticket.Token)
+
+		err := c.Append(b1)
+		test.Equals(t, wall.ErrBlockDepositNotSpendable, errors.Cause(err))
+	})
+}
+
+func TestMintAndAppend(t *testing.T) {
+	idn := wall.NewIdentity([]byte{0x01}, rand.Reader)
+	p := wall.DefaultParams()
+
+	//chain with injected deposit
+	c := NewMemChain(p)
+	tr1 := wall.NewTr().Send(100, idn, 10, true).Sign(idn)
+	c.blocks[c.Genesis()].Transfers = []*wall.Tr{tr1}
+
+	//mint a block
+	_, signed, err := c.Mint(c.Tip(), 1, 1, idn)
+	test.Ok(t, err)
+
+	//which should append succesfully
+	err = c.Append(signed())
+	test.Ok(t, err)
 }
