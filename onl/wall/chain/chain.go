@@ -104,7 +104,7 @@ func (c *MemChain) Mint(prev wall.BID, round, ts uint64, idn *wall.Identity) (b 
 
 			wb, err := c.read(wid)
 			if err != nil {
-				panic("failed to read a block that was listed in a round: " + err.Error())
+				panic("chain: failed to read a round block: " + err.Error())
 			}
 
 			//add the prev's block sibling as witness

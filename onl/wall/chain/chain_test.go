@@ -8,6 +8,7 @@ import (
 
 	"github.com/advanderveer/27067dd17/onl/wall"
 	"github.com/advanderveer/go-test"
+	"github.com/cockroachdb/apd"
 	"github.com/pkg/errors"
 )
 
@@ -369,4 +370,61 @@ func TestLongestChain(t *testing.T) {
 		delete(c.weights, c.Genesis())
 		c.selectLongestChain(1)
 	})
+}
+
+func TestLinearBlockMintingAppending(t *testing.T) {
+	for _, c := range []struct {
+		Name             string
+		RoundCoefficient *apd.Decimal
+		ExpEmptyRounds   int
+		DepositTTL       uint64
+	}{
+		{Name: "high chance on empty round", DepositTTL: 75, RoundCoefficient: apd.New(999, -3), ExpEmptyRounds: 34},
+		{Name: "low chance o empty round", DepositTTL: 75, RoundCoefficient: apd.New(99999, -5), ExpEmptyRounds: 0},
+		{Name: "reduced deposit ttl", DepositTTL: 50, RoundCoefficient: apd.New(999, -3), ExpEmptyRounds: 9},
+	} {
+
+		t.Run(c.Name, func(t *testing.T) {
+
+			idn := wall.NewIdentity([]byte{0x02}, rand.Reader)
+			p := wall.DefaultParams()
+			p.RoundCoefficient = c.RoundCoefficient
+
+			chain := NewMemChain(p)
+			tr1 := wall.NewTr().Send(100, idn, c.DepositTTL, true).Sign(idn)
+			chain.blocks[chain.Genesis()].Transfers = []*wall.Tr{tr1}
+
+			var emptyRounds int
+			var successRounds int
+			for i := uint64(0); i < 100; i++ {
+
+				//mint a block
+				_, signed, err := chain.Mint(chain.Tip(), i+1, i+1, idn)
+				if errors.Cause(err) == ErrDepositNotFound {
+					break //deposit expired
+				}
+
+				b := signed()
+
+				//which should append succesfully
+				err = chain.Append(b)
+				if errors.Cause(err) == wall.ErrBlocksTicketNotGoodEnough {
+					emptyRounds++
+					continue
+				}
+
+				//should always be new tip if it has just 1 tip per round
+				test.Equals(t, b.ID, chain.Tip())
+
+				test.Ok(t, err)
+				successRounds++
+			}
+
+			//amount of rounds that we reached should always be one less then deposit allows
+			test.Equals(t, uint64(emptyRounds+successRounds), tr1.Outputs[0].UnlocksAfter-1)
+
+			//should have some empty rounds also
+			test.Equals(t, c.ExpEmptyRounds, emptyRounds)
+		})
+	}
 }
