@@ -231,6 +231,7 @@ type HashReader interface {
 // A HashReaderFunc is a function implementing HashReader.
 type HashReaderFunc func([]int64) ([]Hash, error)
 
+// ReadHashes implements the HashReader interfaces
 func (f HashReaderFunc) ReadHashes(indexes []int64) ([]Hash, error) {
 	return f(indexes)
 }
